@@ -458,8 +458,18 @@ async function findFolder(name, parentId) {
 async function listFiles(folderId, mimeTypes) {
   const mimeQ = mimeTypes.map(m => `mimeType='${m}'`).join(' or ');
   const q = encodeURIComponent(`'${folderId}' in parents and (${mimeQ}) and trashed=false`);
-  const d = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=name`);
+  const d = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType,modifiedTime)&orderBy=name`);
   return d.files;
+}
+async function downloadXlsx(fileId, mimeType) {
+  // If Google Sheets (auto-converted from xlsx), export as xlsx
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+    const exportUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application%2Fvnd.openxmlformats-officedocument.spreadsheetml.sheet`;
+    const r = await fetch(exportUrl, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if (!r.ok) throw new Error('Export failed ' + r.status);
+    return r.arrayBuffer();
+  }
+  return downloadFile(fileId);
 }
 async function downloadFile(fileId) {
   const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: 'Bearer ' + accessToken } });
@@ -843,12 +853,12 @@ async function loadAll() {
     setLoadingMsg('Loading THL P&Ls...');
     const thlFolderId = await findFolder('Tele-Help-Ing 2026', rootId);
     if (thlFolderId) {
-      const files = await listFiles(thlFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      const files = await listFiles(thlFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.google-apps.spreadsheet']);
       for (const file of files) {
         const key = monthKeyFromName(file.name);
         if (!key || /unearned/i.test(file.name)) continue;
         setLoadingMsg(`Parsing THL ${file.name}...`);
-        const buf = await downloadFile(file.id);
+        const buf = await downloadXlsx(file.id, file.mimeType);
         const wb = XLSX.read(buf, { type:'array' });
         const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
@@ -865,19 +875,21 @@ async function loadAll() {
     setLoadingMsg('Loading Holdings P&Ls...');
     const holdFolderId = await findFolder('Codys Holding', rootId);
     if (holdFolderId) {
-      // xlsx = Holdings P&L files (month in row content, NOT filename)
-      const xlsxFiles = await listFiles(holdFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      // Include Google Sheets MIME type in case Drive auto-converted the xlsx files
+      const XLSX_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.google-apps.spreadsheet','application/vnd.ms-excel'];
+      const xlsxFiles = await listFiles(holdFolderId, XLSX_TYPES);
       for (const file of xlsxFiles) {
         setLoadingMsg(`Parsing Holdings ${file.name}...`);
         try {
-          const buf = await downloadFile(file.id);
+          const buf = await downloadXlsx(file.id, file.mimeType);
           const wb = XLSX.read(buf, { type:'array' });
           const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
           const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
           const metrics = parseHoldingsSimple(rows);
           const key = metrics._monthKey;
           if (key) holdingsData[key] = { metrics, fileName: file.name };
-        } catch(e) { console.warn('Holdings parse error:', file.name, e); }
+          else console.warn('Holdings: no month key found in', file.name, 'row2=', rows[2]?.[0]);
+        } catch(e) { console.warn('Holdings parse error:', file.name, e.message); }
       }
       // PDFs = Relay business bank statements
       ensurePdfJs();
