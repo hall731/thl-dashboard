@@ -783,41 +783,49 @@ function monthKeyFromRelayFilename(name) {
 function parseHoldingsSimple(rows) {
   const m = { expenses: {}, clients: [] };
 
-  // Extract month key from date range in row 2
-  const dateStr = String(rows[2]?.[0] || '').toLowerCase();
+  // Extract month key — search first 8 rows for a date range string
   const monthMap = {january:'Jan 26',february:'Feb 26',march:'Mar 26',april:'Apr 26',
     may:'May 26',june:'Jun 26',july:'Jul 26',august:'Aug 26',
     september:'Sep 26',october:'Oct 26',november:'Nov 26',december:'Dec 26'};
-  for (const [name, key] of Object.entries(monthMap)) {
-    if (dateStr.includes(name)) { m._monthKey = key; break; }
+  for (let ri = 0; ri < Math.min(8, rows.length); ri++) {
+    const dateStr = String(rows[ri]?.[0] || '').toLowerCase();
+    for (const [name, key] of Object.entries(monthMap)) {
+      if (dateStr.includes(name)) { m._monthKey = key; break; }
+    }
+    if (m._monthKey) break;
+  }
+
+  function numVal(cell) {
+    if (typeof cell === 'number') return cell;
+    if (typeof cell === 'string') {
+      const n = parseFloat(cell.replace(/[$,\s]/g,''));
+      return isNaN(n) ? null : n;
+    }
+    return null;
   }
 
   for (const row of rows) {
     const lbl = String(row[0] || '').trim();
-    const val = typeof row[1] === 'number' ? row[1] : null;
+    const val = numVal(row[1]);
     if (!lbl || val === null) continue;
 
-    if (/^total for income/i.test(lbl) || /^sales$/i.test(lbl)) {
-      if (/^total/i.test(lbl)) m.revenue = val; else if (!m.revenue) m.revenue = val;
-    }
-    if (/^gross profit$/i.test(lbl))  m.grossProfit = val;
-    if (/^total for cost of goods sold/i.test(lbl)) m.cogs = val;
+    if (/^sales$/i.test(lbl) && !m.revenue)            m.revenue = val;
+    if (/^total for income/i.test(lbl))                 m.revenue = val;
+    if (/^gross profit$/i.test(lbl))                    m.grossProfit = val;
+    if (/^total for cost of goods sold/i.test(lbl))     m.cogs = val;
     if (/^total for expenses/i.test(lbl) && !/sub/i.test(lbl)) m.totalExpenses = val;
-    if (/^net income$/i.test(lbl))    m.np = val;
-    if (/^contract labor/i.test(lbl)) m.consultingFees = val;
-    if (/^cleaning/i.test(lbl))       m.airbnbCleaning = val;
-    if (/^utilities/i.test(lbl))      m.utilities = val;
-    if (/^advertising/i.test(lbl))    m.marketing = val;
-    if (/^meals/i.test(lbl))          m.meals = val;
-    if (/^travel/i.test(lbl))         m.travel = val;
+    if (/^net income$/i.test(lbl))                      m.np = val;
+    if (/^contract labor/i.test(lbl))                   m.consultingFees = val;
+    if (/^cleaning/i.test(lbl))                         m.airbnbCleaning = val;
+    if (/^utilities/i.test(lbl))                        m.utilities = val;
+    if (/^advertising/i.test(lbl))                      m.marketing = val;
   }
 
   if (!m.grossProfit && m.revenue != null && m.cogs != null) m.grossProfit = m.revenue - m.cogs;
   if (!m.totalExpenses && m.grossProfit != null && m.np != null) m.totalExpenses = m.grossProfit - m.np;
   if (m.revenue) {
-    m.mrr = m.revenue; m.arr = m.revenue * 12;
-    m.gpPct = m.grossProfit / m.revenue;
-    m.npPct = m.np / m.revenue;
+    m.gpPct = (m.grossProfit||0) / m.revenue;
+    m.npPct = (m.np||0) / m.revenue;
   }
   m.overhead = m.totalExpenses;
   return m;
@@ -831,7 +839,7 @@ async function loadAll() {
     const rootId = await findFolder(ROOT_FOLDER);
     if (!rootId) throw new Error(`Folder "${ROOT_FOLDER}" not found in Drive`);
 
-    // THL
+    // THL — QB P&L Detail format
     setLoadingMsg('Loading THL P&Ls...');
     const thlFolderId = await findFolder('Tele-Help-Ing 2026', rootId);
     if (thlFolderId) {
@@ -844,24 +852,44 @@ async function loadAll() {
         const wb = XLSX.read(buf, { type:'array' });
         const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
-        thlData[key] = { metrics: parsePnLDetail(rows), fileName: file.name };
+        const metrics = parsePnLDetail(rows);
+        // Sanity: skip files where GP > Revenue (corrupt/wrong format)
+        if (!metrics.revenue) continue;
+        if (metrics.grossProfit && metrics.grossProfit > metrics.revenue * 1.01) continue;
+        thlData[key] = { metrics, fileName: file.name };
       }
     }
 
-    // Holdings
+    // Holdings — simple 2-col QB P&L format (month detected from date row inside file)
+    // Also loads Relay bank PDFs from the same folder
     setLoadingMsg('Loading Holdings P&Ls...');
     const holdFolderId = await findFolder('Codys Holding', rootId);
     if (holdFolderId) {
-      const files = await listFiles(holdFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
-      for (const file of files) {
-        const key = monthKeyFromName(file.name);
-        if (!key) continue;
+      // xlsx = Holdings P&L files (month in row content, NOT filename)
+      const xlsxFiles = await listFiles(holdFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      for (const file of xlsxFiles) {
         setLoadingMsg(`Parsing Holdings ${file.name}...`);
+        try {
+          const buf = await downloadFile(file.id);
+          const wb = XLSX.read(buf, { type:'array' });
+          const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+          const metrics = parseHoldingsSimple(rows);
+          const key = metrics._monthKey;
+          if (key) holdingsData[key] = { metrics, fileName: file.name };
+        } catch(e) { console.warn('Holdings parse error:', file.name, e); }
+      }
+      // PDFs = Relay business bank statements
+      ensurePdfJs();
+      const pdfFiles = await listFiles(holdFolderId, ['application/pdf']);
+      for (const file of pdfFiles) {
+        if (!/relay/i.test(file.name)) continue;
+        const key = monthKeyFromRelayFilename(file.name);
+        if (!key) continue;
+        setLoadingMsg(`Parsing Relay ${file.name}...`);
         const buf = await downloadFile(file.id);
-        const wb = XLSX.read(buf, { type:'array' });
-        const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
-        holdingsData[key] = { metrics: parseHoldingsPnL(rows), fileName: file.name };
+        const metrics = await parseRelayPDF(buf);
+        if (metrics) relayData[key] = { metrics, fileName: file.name };
       }
     }
 
@@ -1147,7 +1175,10 @@ function renderHoldings() {
   const airbnbLoaded = MONTH_ORDER.filter(k=>airbnbData[k]);
   const allLoaded = [...new Set([...loaded, ...airbnbLoaded])].sort((a,b)=>MONTH_ORDER.indexOf(a)-MONTH_ORDER.indexOf(b));
 
-  if (!allLoaded.length) return;
+  if (!allLoaded.length) {
+    document.getElementById('holdings-kpis').innerHTML = '<div class="empty-state" style="grid-column:1/-1">No Holdings P&L data found — check files are in the Codys Holding folder</div>';
+    return;
+  }
   if (!holdingsSelectedMonth) holdingsSelectedMonth = allLoaded[allLoaded.length-1];
 
   // Tabs
