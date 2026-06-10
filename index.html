@@ -417,7 +417,8 @@ const thlData = {};      // key -> {metrics}
 const holdingsData = {}; // key -> {metrics, consulting, airbnb}
 const airbnbData = {};   // key -> {revenue, payouts, nights, bookings}
 const gringosData = {};  // key -> {metrics}
-const personalData = {}; // key -> relay metrics
+const personalData = {}; // key -> NFCU metrics
+const relayData   = {}; // key -> Relay business bank metrics
 
 // ── GOOGLE AUTH ──────────────────────────────────────────────────
 function initGoogle() {
@@ -693,6 +694,81 @@ function extractRelayMetrics(text) {
   return m;
 }
 
+function monthKeyFromNFCUFilename(name) {
+  // Pattern: 2026-01-12_STMSSCM.pdf — end date defines the month
+  const match = name.match(/(\d{4})-(\d{2})-\d{2}/);
+  if (!match) return null;
+  const year = match[1]; const month = parseInt(match[2]);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const mo = months[month - 1];
+  return mo ? mo + ' ' + year.slice(2) : null;
+}
+
+function extractNFCUMetrics(text) {
+  const m = {
+    checkingDeposits: 0, checkingWithdrawals: 0, checkingEndBal: 0,
+    savingsEndBal: 0, gustoIncome: 0, vaIncome: 0, otherIncome: 0, mortgage: 0
+  };
+
+  // Summary table: account number followed by 5 dollar amounts
+  // Active Duty Checking = 7960021207
+  const adcRe = /7960021207[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})/;
+  const adcM = text.match(adcRe);
+  if (adcM) {
+    m.checkingDeposits     = parseFloat(adcM[2].replace(/,/g,''));
+    m.checkingWithdrawals  = parseFloat(adcM[3].replace(/,/g,''));
+    m.checkingEndBal       = parseFloat(adcM[4].replace(/,/g,''));
+  }
+  // Membership Savings = 3022951895
+  const savRe = /3022951895[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})/;
+  const savM = text.match(savRe);
+  if (savM) m.savingsEndBal = parseFloat(savM[4].replace(/,/g,''));
+
+  // Gusto payroll — "Gusto Pay" followed by large amount
+  const amounts = [];
+  const gustoIdx = text.indexOf('Gusto Pay');
+  if (gustoIdx > -1) {
+    const slice = text.slice(gustoIdx, gustoIdx + 300);
+    const nums = slice.match(/(\d{1,2},\d{3}\.\d{2}|\d{4,}\.\d{2})/g) || [];
+    nums.forEach(n => { const v = parseFloat(n.replace(/,/g,'')); if (v > 1000) m.gustoIncome += v; });
+  }
+  // VA benefits — "Vacp Treas"
+  const vaIdx = text.indexOf('Vacp Treas');
+  if (vaIdx > -1) {
+    const slice = text.slice(vaIdx, vaIdx + 200);
+    const nums = slice.match(/(\d{1,2},\d{3}\.\d{2}|\d{4,}\.\d{2})/g) || [];
+    nums.forEach(n => { const v = parseFloat(n.replace(/,/g,'')); if (v > 500) m.vaIncome += v; });
+  }
+  // Mortgage — "Lakeview" or "Mtg Pymt"
+  const mtgIdx = text.search(/Lakeview|Mtg Pymt/i);
+  if (mtgIdx > -1) {
+    const slice = text.slice(mtgIdx, mtgIdx + 200);
+    const nums = slice.match(/(\d{1,2},\d{3}\.\d{2}|\d{3,}\.\d{2})/g) || [];
+    if (nums.length) m.mortgage = parseFloat(nums[0].replace(/,/g,''));
+  }
+
+  m.otherIncome = Math.max(0, m.checkingDeposits - m.gustoIncome - m.vaIncome);
+  return m;
+}
+
+async function parseNFCUPDF(arrayBuffer) {
+  ensurePdfJs();
+  if (!window.pdfjsLib) return null;
+  try {
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let allText = '';
+    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 4); pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      allText += ' ' + content.items.map(i => i.str).join(' ');
+    }
+    return extractNFCUMetrics(allText);
+  } catch(e) {
+    console.error('NFCU PDF parse error:', e);
+    return null;
+  }
+}
+
 function monthKeyFromRelayFilename(name) {
   // Pattern: "Relay 2026-01-01 #1232.pdf" or "Relay (Partial) 2026-06-01 #1232.pdf"
   const match = name.match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -822,19 +898,21 @@ async function loadAll() {
 
     hideLoading();
     document.getElementById('last-refresh').textContent = 'Refreshed ' + new Date().toLocaleTimeString();
-    // Personal Accounts (Relay PDFs)
-    setLoadingMsg('Loading Relay account statements...');
+    // Personal Accounts — Navy Federal statements (STMSSCM format)
+    setLoadingMsg('Loading Navy Federal statements...');
     const personalFolderId = await findFolder('Personal Accounts', rootId);
     if (personalFolderId) {
       ensurePdfJs();
       const pdfFiles = await listFiles(personalFolderId, ['application/pdf']);
       for (const file of pdfFiles) {
-        const key = monthKeyFromRelayFilename(file.name);
+        const key = monthKeyFromNFCUFilename(file.name);
         if (!key) continue;
-        setLoadingMsg(`Parsing Relay ${file.name}...`);
+        setLoadingMsg(`Parsing NFCU ${file.name}...`);
         const buf = await downloadFile(file.id);
-        const metrics = await parseRelayPDF(buf);
-        if (metrics) personalData[key] = { metrics, fileName: file.name };
+        const metrics = await parseNFCUPDF(buf);
+        if (metrics && metrics.checkingDeposits > 0) {
+          personalData[key] = { metrics, fileName: file.name };
+        }
       }
     }
 
@@ -1387,136 +1465,133 @@ function updateProj(){
 }
 
 
-// ── PERSONAL (RELAY) ─────────────────────────────────────────────
+// ── PERSONAL (NAVY FEDERAL) ──────────────────────────────────────
 let personalChart1 = null, personalChart2 = null;
 let personalSelectedMonth = null;
 
 function renderPersonal() {
   const loaded = MONTH_ORDER.filter(k => personalData[k]);
-  const emptyEl = document.getElementById('personal-empty');
+  const emptyEl  = document.getElementById('personal-empty');
   const contentEl = document.getElementById('personal-content');
-
   if (!loaded.length) {
-    if (emptyEl) emptyEl.style.display = 'block';
-    if (contentEl) contentEl.style.display = 'none';
+    if (emptyEl) { emptyEl.style.display='block'; emptyEl.querySelector('p:last-child').textContent='Add Navy Federal PDFs to the Personal Accounts folder in Drive'; }
+    if (contentEl) contentEl.style.display='none';
     return;
   }
-  if (emptyEl) emptyEl.style.display = 'none';
-  if (contentEl) contentEl.style.display = 'block';
-
-  if (!personalSelectedMonth || !personalData[personalSelectedMonth]) {
-    personalSelectedMonth = loaded[loaded.length - 1];
-  }
+  if (emptyEl) emptyEl.style.display='none';
+  if (contentEl) contentEl.style.display='block';
+  if (!personalSelectedMonth || !personalData[personalSelectedMonth]) personalSelectedMonth = loaded[loaded.length-1];
 
   // Tabs
   const tabsEl = document.getElementById('personal-tabs');
   tabsEl.innerHTML = '';
   loaded.forEach(k => {
     const t = document.createElement('button');
-    t.className = 'tab loaded' + (k === personalSelectedMonth ? ' active' : '');
+    t.className = 'tab loaded' + (k===personalSelectedMonth?' active':'');
     t.textContent = k;
-    t.onclick = () => { personalSelectedMonth = k; renderPersonal(); };
+    t.onclick = () => { personalSelectedMonth=k; renderPersonal(); };
     tabsEl.appendChild(t);
   });
-  // YTD tab
   const ytd = document.createElement('button');
-  ytd.className = 'tab loaded' + (personalSelectedMonth === 'YTD' ? ' active' : '');
-  ytd.textContent = 'YTD 2026'; ytd.style.marginLeft = '8px';
-  ytd.onclick = () => { personalSelectedMonth = 'YTD'; renderPersonal(); };
+  ytd.className = 'tab loaded' + (personalSelectedMonth==='YTD'?' active':'');
+  ytd.textContent = 'YTD 2026'; ytd.style.marginLeft='8px';
+  ytd.onclick = () => { personalSelectedMonth='YTD'; renderPersonal(); };
   tabsEl.appendChild(ytd);
 
-  // Get metrics for selected period
-  function getM(k) { return personalData[k]?.metrics || {}; }
   const isYTD = personalSelectedMonth === 'YTD';
-  const m = isYTD
-    ? { airbnb:   loaded.reduce((s,k)=>s+(getM(k).airbnb||0),0),
-        gusto:    loaded.reduce((s,k)=>s+(getM(k).gusto||0),0),
-        deposits: loaded.reduce((s,k)=>s+(getM(k).deposits||0),0),
-        withdrawals: loaded.reduce((s,k)=>s+(getM(k).withdrawals||0),0),
-        openBal:  getM(loaded[0]).openBal,
-        closeBal: getM(loaded[loaded.length-1]).closeBal,
-        otherDeposits: loaded.reduce((s,k)=>s+(getM(k).otherDeposits||0),0) }
-    : getM(personalSelectedMonth);
+  function getM(k) { return personalData[k]?.metrics || {}; }
+  const m = isYTD ? {
+    gustoIncome:         loaded.reduce((s,k)=>s+(getM(k).gustoIncome||0),0),
+    vaIncome:            loaded.reduce((s,k)=>s+(getM(k).vaIncome||0),0),
+    otherIncome:         loaded.reduce((s,k)=>s+(getM(k).otherIncome||0),0),
+    checkingDeposits:    loaded.reduce((s,k)=>s+(getM(k).checkingDeposits||0),0),
+    checkingWithdrawals: loaded.reduce((s,k)=>s+(getM(k).checkingWithdrawals||0),0),
+    mortgage:            loaded.reduce((s,k)=>s+(getM(k).mortgage||0),0),
+    checkingEndBal:      getM(loaded[loaded.length-1]).checkingEndBal,
+    savingsEndBal:       getM(loaded[loaded.length-1]).savingsEndBal,
+  } : getM(personalSelectedMonth);
 
-  const netCF = (m.deposits||0) - (m.withdrawals||0);
-  const totalIncome = (m.airbnb||0) + (m.gusto||0);
+  const totalIncome  = (m.gustoIncome||0) + (m.vaIncome||0);
+  const netFlow      = (m.checkingDeposits||0) - (m.checkingWithdrawals||0);
+  const netWorth     = (m.checkingEndBal||0) + (m.savingsEndBal||0);
 
-  // KPIs
   document.getElementById('personal-kpis').innerHTML = [
-    { label: 'Airbnb income',     val: fmt$(m.airbnb),      color: 'var(--green)' },
-    { label: 'Consulting (Gusto)',val: fmt$(m.gusto),        color: 'var(--accent)' },
-    { label: 'Total deposits',    val: fmt$(m.deposits) },
-    { label: 'Total withdrawals', val: fmt$(m.withdrawals),  color: 'var(--red)' },
-    { label: 'Net cash flow',     val: fmt$(netCF),          color: netCF >= 0 ? 'var(--green)' : 'var(--red)' },
-    { label: 'Closing balance',   val: fmt$(m.closeBal) },
-  ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+    { label:'Gusto salary',      val:fmt$(m.gustoIncome),   color:'var(--green)' },
+    { label:'VA benefits',       val:fmt$(m.vaIncome),      color:'var(--green)' },
+    { label:'Total deposits',    val:fmt$(m.checkingDeposits) },
+    { label:'Total spending',    val:fmt$(m.checkingWithdrawals), color:'var(--red)' },
+    { label:'Net cash flow',     val:fmt$(netFlow),         color:netFlow>=0?'var(--green)':'var(--red)' },
+    { label:'Savings balance',   val:fmt$(m.savingsEndBal), color:'var(--accent)' },
+    { label:'Checking balance',  val:fmt$(m.checkingEndBal) },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
 
   // Income breakdown chart
-  const airbnbVals  = loaded.map(k => getM(k).airbnb || 0);
-  const gustoVals   = loaded.map(k => getM(k).gusto  || 0);
+  const gustoVals = loaded.map(k=>getM(k).gustoIncome||0);
+  const vaVals    = loaded.map(k=>getM(k).vaIncome||0);
   if (personalChart1) personalChart1.destroy();
   personalChart1 = new Chart(document.getElementById('personal-income-chart'), {
-    type: 'bar',
-    data: { labels: loaded, datasets: [
-      { label: 'Airbnb',     data: airbnbVals, backgroundColor: '#4ade80', borderRadius: 4 },
-      { label: 'Consulting', data: gustoVals,  backgroundColor: '#7c6ef7', borderRadius: 4 },
+    type:'bar',
+    data:{ labels:loaded, datasets:[
+      { label:'Gusto salary',data:gustoVals, backgroundColor:'#7c6ef7', borderRadius:4 },
+      { label:'VA benefits', data:vaVals,    backgroundColor:'#4ade80', borderRadius:4 },
     ]},
-    options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { x: { stacked: true, ticks:{color:'#888'}, grid:{display:false} },
-                y: { stacked: true, ticks:{color:'#888', callback:v=>'$'+Math.round(v/1000)+'k'}, grid:{color:'rgba(255,255,255,.05)'} } } }
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ x:{stacked:true,ticks:{color:'#888'},grid:{display:false}},
+               y:{stacked:true,ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}} }}
   });
 
-  // Balance trend chart
-  const balances = loaded.map(k => getM(k).closeBal || 0);
+  // Savings balance trend
+  const savBals = loaded.map(k=>getM(k).savingsEndBal||0);
   if (personalChart2) personalChart2.destroy();
   personalChart2 = new Chart(document.getElementById('personal-balance-chart'), {
-    type: 'line',
-    data: { labels: loaded, datasets: [
-      { label: 'Balance', data: balances, borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,.1)',
-        borderWidth: 2.5, pointRadius: 5, pointBackgroundColor: '#fbbf24', tension: 0.3, fill: true }
+    type:'line',
+    data:{ labels:loaded, datasets:[
+      { label:'Savings', data:savBals, borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,.1)',
+        borderWidth:2.5, pointRadius:5, pointBackgroundColor:'#fbbf24', tension:0.3, fill:true }
     ]},
-    options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { x: { ticks:{color:'#888'}, grid:{display:false} },
-                y: { ticks:{color:'#888', callback:v=>'$'+Math.round(v/1000)+'k'}, grid:{color:'rgba(255,255,255,.05)'} } } }
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ x:{ticks:{color:'#888'},grid:{display:false}},
+               y:{ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}} }}
   });
 
-  // Monthly summary table
-  const tableRows = [
-    { label:'Opening balance', key:'openBal',     bold:true },
-    { label:'Total deposits',  key:'deposits' },
-    { label:'  Airbnb income', key:'airbnb' },
-    { label:'  Consulting',    key:'gusto' },
-    { label:'  Other',         key:'otherDeposits' },
-    { label:'Total withdrawals',key:'withdrawals' },
-    { label:'Net cash flow',   key:'_net',         bold:true },
-    { label:'Closing balance', key:'closeBal',     bold:true },
+  // Summary table
+  const tRows = [
+    { label:'Gusto salary',   key:'gustoIncome',         bold:true },
+    { label:'VA benefits',    key:'vaIncome' },
+    { label:'Other deposits', key:'otherIncome' },
+    { label:'Total deposits', key:'checkingDeposits',    bold:true },
+    { label:'Total spending', key:'checkingWithdrawals' },
+    { label:'  Mortgage',     key:'mortgage' },
+    { label:'Net cash flow',  key:'_net',                bold:true },
+    { label:'Checking bal',   key:'checkingEndBal' },
+    { label:'Savings bal',    key:'savingsEndBal',       bold:true },
   ];
-  const th = `<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD / Total</th></tr></thead>`;
-  const tb = '<tbody>' + tableRows.map(tr => {
-    const cls = tr.bold ? 'row-bold' : tr.label.startsWith('  ') ? 'row-pct' : '';
-    const cells = loaded.map(k => {
+  const th = `<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
+  const tb = '<tbody>'+tRows.map(tr=>{
+    const cls = tr.bold?'row-bold':tr.label.startsWith('  ')?'row-pct':'';
+    const cells = loaded.map(k=>{
       const d = getM(k);
-      const v = tr.key === '_net' ? (d.deposits||0) - (d.withdrawals||0) : d[tr.key];
-      return `<td class="${v < 0 ? 'neg' : ''}">${fmt$(v)}</td>`;
+      const v = tr.key==='_net'?(d.checkingDeposits||0)-(d.checkingWithdrawals||0):d[tr.key]||0;
+      return `<td class="${v<0?'neg':''}">${fmt$(v)}</td>`;
     }).join('');
-    const ytdV = tr.key === 'openBal' ? getM(loaded[0]).openBal :
-                 tr.key === 'closeBal' ? getM(loaded[loaded.length-1]).closeBal :
-                 tr.key === '_net' ? loaded.reduce((s,k)=>{const d=getM(k);return s+(d.deposits||0)-(d.withdrawals||0);},0) :
-                 loaded.reduce((s,k)=>s+(getM(k)[tr.key]||0),0);
+    const isBalance = ['checkingEndBal','savingsEndBal'].includes(tr.key);
+    const ytdV = tr.key==='_net'
+      ? loaded.reduce((s,k)=>{const d=getM(k);return s+(d.checkingDeposits||0)-(d.checkingWithdrawals||0);},0)
+      : isBalance ? (getM(loaded[loaded.length-1])[tr.key]||0)
+      : loaded.reduce((s,k)=>s+(getM(k)[tr.key]||0),0);
     return `<tr class="${cls}"><td>${tr.label.trim()}</td>${cells}<td class="${ytdV<0?'neg':''}">${fmt$(ytdV)}</td></tr>`;
-  }).join('') + '</tbody>';
-  document.getElementById('personal-table').innerHTML = th + tb;
+  }).join('')+'</tbody>';
+  document.getElementById('personal-table').innerHTML = th+tb;
 
-  // Transaction categories for selected month
-  document.getElementById('personal-month-lbl').textContent = isYTD ? 'YTD 2026' : personalSelectedMonth;
+  document.getElementById('personal-month-lbl').textContent = isYTD?'YTD 2026':personalSelectedMonth;
   document.getElementById('personal-cats').innerHTML = [
-    { label:'Airbnb income',  val:fmt$(m.airbnb),     color:'var(--green)' },
-    { label:'Consulting',     val:fmt$(m.gusto),      color:'var(--accent)' },
-    { label:'Other deposits', val:fmt$(m.otherDeposits||0) },
-    { label:'Withdrawals',    val:fmt$(m.withdrawals), color:'var(--red)' },
-    { label:'Net',            val:fmt$(netCF),        color:netCF>=0?'var(--green)':'var(--red)' },
+    { label:'Gusto salary',  val:fmt$(m.gustoIncome),  color:'var(--accent)' },
+    { label:'VA benefits',   val:fmt$(m.vaIncome),     color:'var(--green)' },
+    { label:'Mortgage',      val:fmt$(m.mortgage),     color:'var(--red)' },
+    { label:'Net flow',      val:fmt$(netFlow),        color:netFlow>=0?'var(--green)':'var(--red)' },
+    { label:'Savings',       val:fmt$(m.savingsEndBal),color:'var(--amber)' },
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="font-size:18px;${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
 }
 
