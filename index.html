@@ -3,1120 +3,1210 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>THL — P&L Dashboard</title>
+<title>Cody's Financial Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  :root {
-    --bg: #0f0f13;
-    --bg2: #17171e;
-    --bg3: #1e1e28;
-    --border: rgba(255,255,255,0.08);
-    --text: #f0f0f0;
-    --muted: #888;
-    --accent: #7c6ef7;
-    --green: #4ade80;
-    --red: #f87171;
-    --amber: #fbbf24;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+:root {
+  --bg:#0f0f13;--bg2:#17171e;--bg3:#1e1e28;--border:rgba(255,255,255,0.08);
+  --text:#f0f0f0;--muted:#888;--accent:#7c6ef7;--green:#4ade80;--red:#f87171;--amber:#fbbf24;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
 
-  /* AUTH SCREEN */
-  #auth-screen {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-height: 100vh; gap: 1.5rem;
-  }
-  .logo { font-size: 13px; letter-spacing: .15em; color: var(--muted); text-transform: uppercase; }
-  .auth-title { font-size: 28px; font-weight: 600; }
-  .auth-sub { color: var(--muted); font-size: 14px; }
-  .sign-in-btn {
-    display: flex; align-items: center; gap: 10px; padding: 12px 24px;
-    background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
-    color: var(--text); font-size: 15px; cursor: pointer; transition: background .15s;
-  }
-  .sign-in-btn:hover { background: var(--accent); border-color: var(--accent); }
-  .sign-in-btn svg { width: 20px; height: 20px; }
+/* AUTH */
+#auth-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:1.5rem}
+.logo{font-size:13px;letter-spacing:.15em;color:var(--muted);text-transform:uppercase}
+.auth-title{font-size:28px;font-weight:600}
+.auth-sub{color:var(--muted);font-size:14px}
+.sign-in-btn{display:flex;align-items:center;gap:10px;padding:12px 24px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;cursor:pointer;transition:background .15s}
+.sign-in-btn:hover{background:var(--accent);border-color:var(--accent)}
+.sign-in-btn svg{width:20px;height:20px}
 
-  /* DASHBOARD */
-  #dashboard { display: none; }
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 1rem 1.5rem; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: var(--bg); z-index: 10;
-  }
-  .topbar-left { display: flex; align-items: center; gap: 12px; }
-  .topbar-logo { font-size: 12px; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
-  .topbar-title { font-size: 15px; font-weight: 500; }
-  .topbar-right { display: flex; align-items: center; gap: 10px; }
-  .refresh-btn, .signout-btn {
-    padding: 6px 14px; border-radius: 7px; font-size: 13px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--bg3); color: var(--text);
-    transition: background .15s;
-  }
-  .refresh-btn:hover { background: var(--accent); border-color: var(--accent); }
-  .signout-btn:hover { background: var(--bg2); }
-  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; }
+/* SHELL */
+#app{display:none}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:.85rem 1.5rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:10}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-logo{font-size:12px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+.topbar-title{font-size:15px;font-weight:500}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.btn{padding:6px 14px;border-radius:7px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text);transition:background .15s}
+.btn:hover{background:var(--accent);border-color:var(--accent)}
+.btn-ghost:hover{background:var(--bg2)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block}
+#last-refresh{font-size:12px;color:var(--muted)}
 
-  .main { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+/* ENTITY NAV */
+.entity-nav{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg);overflow-x:auto}
+.entity-tab{padding:10px 20px;font-size:13px;cursor:pointer;color:var(--muted);border:none;background:none;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
+.entity-tab:hover{color:var(--text)}
+.entity-tab.active{color:var(--text);border-bottom-color:var(--accent)}
 
-  /* PERIOD TABS */
-  .period-bar { display: flex; gap: 8px; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
-  .period-bar span { font-size: 12px; color: var(--muted); margin-right: 4px; }
-  .tab {
-    padding: 5px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--bg3); color: var(--muted);
-    transition: all .15s;
-  }
-  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .tab.loaded { color: var(--text); border-color: rgba(255,255,255,0.2); }
+/* VIEWS */
+.view{display:none;padding:1.5rem;max-width:1200px;margin:0 auto}
+.view.active{display:block}
 
-  /* KPI GRID */
-  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
-  .kpi {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
-    padding: 1rem 1.1rem;
-  }
-  .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
-  .kpi-val { font-size: 22px; font-weight: 600; }
-  .kpi-delta { font-size: 11px; margin-top: 4px; }
-  .kpi-delta.up { color: var(--green); }
-  .kpi-delta.dn { color: var(--red); }
-  .kpi-delta.neu { color: var(--muted); }
+/* OVERVIEW */
+.overview-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:1.5rem}
+.entity-rows{display:flex;flex-direction:column;gap:8px;margin-bottom:1.5rem}
+.entity-row{display:grid;grid-template-columns:180px repeat(4,1fr) 40px;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.85rem 1.1rem;cursor:pointer;transition:border-color .15s}
+.entity-row:hover{border-color:var(--accent)}
+.entity-row .ent-name{font-size:14px;font-weight:500}
+.entity-row .ent-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.entity-row .ent-val{text-align:right}
+.entity-row .ent-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.entity-row .ent-num{font-size:15px;font-weight:500}
+.entity-row .ent-arrow{color:var(--muted);font-size:18px;text-align:right}
+.entity-row-header{display:grid;grid-template-columns:180px repeat(4,1fr) 40px;gap:12px;padding:0 1.1rem .4rem;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.entity-row-header span{text-align:right}
+.entity-row-header span:first-child{text-align:left}
 
-  /* TWO COL */
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
-  @media(max-width:680px){ .two-col { grid-template-columns: 1fr; } }
+/* KPI */
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem}
+.kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+.kpi-val{font-size:22px;font-weight:600}
+.kpi-delta{font-size:11px;margin-top:4px}
+.kpi-delta.up{color:var(--green)}.kpi-delta.dn{color:var(--red)}.kpi-delta.neu{color:var(--muted)}
 
-  /* CARDS */
-  .card {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
-    padding: 1.1rem 1.25rem;
-  }
-  .card-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 1rem; }
+/* CARDS */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.25rem}
+.card-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:1rem}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+@media(max-width:680px){.two-col{grid-template-columns:1fr}}
 
-  /* RATIO BOXES */
-  .ratio-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .ratio-box { background: var(--bg3); border-radius: 8px; padding: .9rem; text-align: center; }
-  .ratio-big { font-size: 26px; font-weight: 600; margin: 4px 0; }
-  .ratio-lbl { font-size: 11px; color: var(--muted); }
-  .ratio-chg { font-size: 11px; margin-top: 3px; }
+/* RATIO */
+.ratio-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ratio-box{background:var(--bg3);border-radius:8px;padding:.9rem;text-align:center}
+.ratio-big{font-size:26px;font-weight:600;margin:4px 0}
+.ratio-lbl{font-size:11px;color:var(--muted)}
 
-  /* CHART */
-  .chart-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
-  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-  .chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
-  .legend-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 4px; }
-  .chart-wrap { position: relative; height: 220px; }
+/* CHART */
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.25rem;margin-bottom:1rem}
+.chart-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:8px}
+.chart-legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px}
+.chart-wrap{position:relative;height:220px}
 
-  /* P&L TABLE */
-  .table-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.25rem; margin-bottom: 1rem; overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: right; padding: 6px 10px; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  th:first-child { text-align: left; }
-  td { text-align: right; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); white-space: nowrap; }
-  td:first-child { text-align: left; color: var(--muted); }
-  tr.row-bold td { font-weight: 600; color: var(--text) !important; }
-  tr.row-pct td { color: var(--muted); font-size: 12px; }
-  tr.row-pct td:first-child { color: var(--muted); padding-left: 22px; }
-  td.pos { color: var(--green); }
-  td.neg { color: var(--red); }
+/* TABLES */
+.table-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.25rem;margin-bottom:1rem;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:right;padding:6px 10px;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child{text-align:left}
+td{text-align:right;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap}
+td:first-child{text-align:left;color:var(--muted)}
+tr.row-bold td{font-weight:600;color:var(--text)!important}
+tr.row-pct td{color:var(--muted);font-size:12px}
+tr.row-pct td:first-child{padding-left:22px}
+td.pos{color:var(--green)}td.neg{color:var(--red)}
 
-  /* CLIENT TABLE */
-  .client-table th, .client-table td { font-size: 12px; }
-  .client-table td:first-child { color: var(--text); font-weight: 500; }
-  .badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 500; }
-  .badge-thl { background: rgba(124,110,247,.2); color: var(--accent); }
-  .badge-tpva { background: rgba(74,222,128,.15); color: var(--green); }
-  .badge-tcva { background: rgba(251,191,36,.15); color: var(--amber); }
+/* PERIOD TABS */
+.period-bar{display:flex;gap:8px;margin-bottom:1.5rem;flex-wrap:wrap;align-items:center}
+.period-bar span{font-size:12px;color:var(--muted)}
+.tab{padding:5px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--muted);transition:all .15s}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.tab.loaded{color:var(--text);border-color:rgba(255,255,255,0.2)}
 
-  /* LOADING */
-  #loading {
-    display: none; position: fixed; inset: 0; background: rgba(15,15,19,.85);
-    align-items: center; justify-content: center; flex-direction: column; gap: 1rem; z-index: 100;
-  }
-  .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #loading p { color: var(--muted); font-size: 14px; }
+/* VIEW NAV (Dashboard/Projections) */
+.view-nav{display:flex;gap:4px;padding:0 1.5rem;border-bottom:1px solid var(--border);background:var(--bg)}
+.view-tab{padding:10px 18px;font-size:13px;cursor:pointer;color:var(--muted);border:none;background:none;border-bottom:2px solid transparent;transition:all .15s}
+.view-tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.view-tab:hover{color:var(--text)}
 
-  /* ERROR */
-  .error-banner { background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); border-radius: 8px; padding: .75rem 1rem; font-size: 13px; color: var(--red); margin-bottom: 1rem; display: none; }
+/* PROJECTIONS */
+#proj-view{display:none;padding:1.5rem;max-width:1200px;margin:0 auto}
+.proj-grid{display:grid;grid-template-columns:320px 1fr;gap:1rem;margin-bottom:1rem}
+@media(max-width:800px){.proj-grid{grid-template-columns:1fr}}
+.input-section{display:flex;flex-direction:column;gap:.6rem}
+.input-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.input-row label{font-size:12px;color:var(--muted);flex:1}
+.input-row input[type=number]{width:80px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;text-align:right}
+.input-row input[type=range]{flex:1}
+.input-row .val-label{font-size:12px;font-weight:500;min-width:52px;text-align:right;color:var(--text)}
+.proj-section-title{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:.5rem 0 .25rem}
+.proj-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:1rem}
+.proj-chart-wrap{position:relative;height:240px}
+.proj-table{width:100%;border-collapse:collapse;font-size:12px}
+.proj-table th{text-align:right;padding:5px 8px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);white-space:nowrap}
+.proj-table th:first-child{text-align:left}
+.proj-table td{text-align:right;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap}
+.proj-table td:first-child{text-align:left;color:var(--muted)}
+.proj-table tr.proj-bold td{font-weight:600;color:var(--text)!important}
+.proj-table td.actual{color:var(--text)}
+.proj-table td.projected{color:var(--accent)}
+.proj-table td.proj-pos{color:var(--green)}
+.proj-table td.proj-neg{color:var(--red)}
+.scenario-bar{display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
+.scenario-bar span{font-size:12px;color:var(--muted)}
+.scenario-btn{padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--muted);transition:all .15s}
+.scenario-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.reset-btn{padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);margin-left:auto}
+.reset-btn:hover{color:var(--text)}
+.legend-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
+.legend-pill .dot{width:8px;height:8px;border-radius:2px}
 
-  .empty-state { text-align: center; padding: 4rem; color: var(--muted); font-size: 14px; }
+/* AIRBNB */
+.airbnb-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:1rem}
 
-  /* NAV TABS */
-  .view-nav { display: flex; gap: 4px; padding: 0 1.5rem; border-bottom: 1px solid var(--border); background: var(--bg); }
-  .view-tab { padding: 10px 18px; font-size: 13px; cursor: pointer; color: var(--muted); border: none; background: none; border-bottom: 2px solid transparent; transition: all .15s; }
-  .view-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-  .view-tab:hover { color: var(--text); }
+/* LOADING */
+#loading{display:none;position:fixed;inset:0;background:rgba(15,15,19,.85);align-items:center;justify-content:center;flex-direction:column;gap:1rem;z-index:100}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading p{color:var(--muted);font-size:14px}
+.error-banner{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:.75rem 1rem;font-size:13px;color:var(--red);margin-bottom:1rem;display:none}
+.empty-state{text-align:center;padding:3rem;color:var(--muted);font-size:14px}
 
-  /* PROJECTIONS */
-  #proj-view { display: none; padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
-  .proj-grid { display: grid; grid-template-columns: 340px 1fr; gap: 1rem; margin-bottom: 1rem; }
-  @media(max-width:800px){ .proj-grid { grid-template-columns: 1fr; } }
-  .input-section { display: flex; flex-direction: column; gap: .6rem; }
-  .input-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .input-row label { font-size: 12px; color: var(--muted); flex: 1; }
-  .input-row input[type=number] { width: 100px; padding: 5px 8px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; text-align: right; }
-  .input-row input[type=range] { flex: 1; }
-  .input-row .val-label { font-size: 12px; font-weight: 500; min-width: 52px; text-align: right; color: var(--text); }
-  .proj-section-title { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: .5rem 0 .25rem; }
-  .proj-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: 8px; margin-bottom: 1rem; }
-  .proj-chart-wrap { position: relative; height: 240px; }
-  .proj-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .proj-table th { text-align: right; padding: 5px 8px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  .proj-table th:first-child { text-align: left; }
-  .proj-table td { text-align: right; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.04); white-space: nowrap; }
-  .proj-table td:first-child { text-align: left; color: var(--muted); }
-  .proj-table tr.proj-bold td { font-weight: 600; color: var(--text) !important; }
-  .proj-table td.actual { color: var(--text); }
-  .proj-table td.projected { color: var(--accent); }
-  .proj-table td.proj-pos { color: var(--green); }
-  .proj-table td.proj-neg { color: var(--red); }
-  .scenario-bar { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
-  .scenario-bar span { font-size: 12px; color: var(--muted); }
-  .scenario-btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg3); color: var(--muted); transition: all .15s; }
-  .scenario-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .reset-btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: none; color: var(--muted); margin-left: auto; }
-  .reset-btn:hover { color: var(--text); }
-  .legend-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
-  .legend-pill .dot { width: 8px; height: 8px; border-radius: 2px; }
-
+/* SUB TABS (Holdings: All / Consulting / Airbnb) */
+.sub-tabs{display:flex;gap:6px;margin-bottom:1.25rem}
+.sub-tab{padding:4px 12px;border-radius:5px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--muted);transition:all .15s}
+.sub-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
 </style>
 </head>
 <body>
 
-<!-- AUTH SCREEN -->
+<!-- AUTH -->
 <div id="auth-screen">
-  <div class="logo">Tele-Help-Ing</div>
-  <div class="auth-title">P&L Dashboard</div>
-  <div class="auth-sub">Connect Google Drive to load your monthly P&L files</div>
+  <div class="logo">Cody Hall</div>
+  <div class="auth-title">Financial Tracker</div>
+  <div class="auth-sub">Connect Google Drive to load your financial data</div>
   <button class="sign-in-btn" onclick="signIn()">
-    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-    </svg>
+    <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
     Sign in with Google
   </button>
 </div>
 
-<!-- LOADING OVERLAY -->
+<!-- LOADING -->
 <div id="loading">
   <div class="spinner"></div>
-  <p id="loading-msg">Loading files from Drive...</p>
+  <p id="loading-msg">Loading...</p>
 </div>
 
-<!-- DASHBOARD -->
-<div id="dashboard">
+<!-- APP -->
+<div id="app">
   <div class="topbar">
     <div class="topbar-left">
-      <div class="topbar-logo">THL</div>
-      <div class="topbar-title">P&L Dashboard</div>
-      <span class="status-dot" id="status-dot" title="Connected"></span>
+      <div class="topbar-logo">Cody Hall</div>
+      <div class="topbar-title">Financial Tracker</div>
+      <span class="status-dot"></span>
     </div>
     <div class="topbar-right">
-      <span id="last-refresh" style="font-size:12px;color:var(--muted)"></span>
-      <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
-      <button class="signout-btn" onclick="signOut()">Sign out</button>
+      <span id="last-refresh"></span>
+      <button class="btn" onclick="loadAll()">↻ Refresh</button>
+      <button class="btn btn-ghost" onclick="signOut()">Sign out</button>
     </div>
   </div>
 
-  <div class="view-nav">
-    <button class="view-tab active" onclick="switchView('dashboard',this)">Dashboard</button>
-    <button class="view-tab" onclick="switchView('projections',this)">Projections</button>
+  <!-- ENTITY NAV -->
+  <div class="entity-nav">
+    <button class="entity-tab active" onclick="showEntity('overview',this)">Overview</button>
+    <button class="entity-tab" onclick="showEntity('thl',this)">Tele-Help-Ing</button>
+    <button class="entity-tab" onclick="showEntity('holdings',this)">Cody's Holdings</button>
+    <button class="entity-tab" onclick="showEntity('gringos',this)">Los Gringos Cafe</button>
+    <button class="entity-tab" onclick="showEntity('personal',this)">Personal</button>
   </div>
 
-  <div id="proj-view">
-    <div class="scenario-bar">
-      <span>Scenario:</span>
-      <button class="scenario-btn active" onclick="applyScenario('trend',this)">Trend (auto)</button>
-      <button class="scenario-btn" onclick="applyScenario('conservative',this)">Conservative</button>
-      <button class="scenario-btn" onclick="applyScenario('growth',this)">Growth</button>
-      <button class="reset-btn" onclick="resetInputs()">↺ Reset</button>
-    </div>
-
-    <div class="proj-grid">
-      <div class="card input-section">
-        <div class="card-title" style="margin-bottom:.5rem">Assumptions</div>
-
-        <div class="proj-section-title">Current state (auto-filled)</div>
-        <div class="input-row">
-          <label>Active clients now</label>
-          <input type="number" id="p-active-clients" oninput="updateProj()" step="1" style="width:72px">
-        </div>
-        <div class="input-row">
-          <label>Avg revenue / client / mo</label>
-          <input type="number" id="p-avg-rev" oninput="updateProj()" step="50" style="width:72px">
-        </div>
-
-        <div class="proj-section-title">Monthly client movement</div>
-        <div class="input-row">
-          <label>New clients / mo</label>
-          <input type="range" min="0" max="10" step="1" id="p-new-clients" oninput="updateProj()">
-          <span class="val-label" id="p-new-clients-lbl"></span>
-        </div>
-        <div class="input-row">
-          <label>Clients lost / mo</label>
-          <input type="range" min="0" max="8" step="1" id="p-churn" oninput="updateProj()">
-          <span class="val-label" id="p-churn-lbl"></span>
-        </div>
-
-        <div class="proj-section-title">Cost adjustments</div>
-        <div class="input-row">
-          <label>COGS % of revenue</label>
-          <input type="range" min="20" max="90" step="1" id="p-cogs-pct" oninput="updateProj()">
-          <span class="val-label" id="p-cogs-pct-lbl"></span>
-        </div>
-        <div class="input-row">
-          <label>Fixed expenses / mo</label>
-          <input type="number" id="p-fixed-exp" oninput="updateProj()" step="100" style="width:72px">
-        </div>
-
-        <div class="proj-section-title">Window &amp; target</div>
-        <div class="input-row">
-          <label>Months to project</label>
-          <input type="range" min="1" max="12" step="1" id="p-months" oninput="updateProj()">
-          <span class="val-label" id="p-months-lbl"></span>
-        </div>
-        <div class="input-row">
-          <label>NP target / month</label>
-          <input type="number" id="p-np-target" oninput="updateProj()" step="500" style="width:72px">
-        </div>
+  <!-- OVERVIEW -->
+  <div id="view-overview" class="view active">
+    <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
+      <div class="error-banner" id="error-banner"></div>
+      <div class="overview-kpis" id="overview-kpis"></div>
+      <div class="entity-row-header">
+        <span>Entity</span><span>Revenue</span><span>Gross Profit</span><span>Net Income</span><span>NP %</span><span></span>
       </div>
+      <div class="entity-rows" id="entity-rows"></div>
+    </div>
+  </div>
 
-      <div>
-        <div class="proj-kpi-grid" id="proj-kpis"></div>
-        <div class="chart-card" style="margin-bottom:1rem">
+  <!-- THL -->
+  <div id="view-thl" class="view">
+    <div class="view-nav">
+      <button class="view-tab active" onclick="switchTHLView('dashboard',this)">Dashboard</button>
+      <button class="view-tab" onclick="switchTHLView('projections',this)">Projections</button>
+    </div>
+    <div id="thl-dash-view">
+      <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
+        <div class="period-bar"><span>Period:</span><div id="thl-tabs"></div></div>
+        <div class="overview-kpis" id="thl-kpis"></div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title" id="cac-card-title">GP : CAC ratio <span style="font-size:10px;color:var(--muted);font-weight:400">Gross profit ÷ marketing spend</span>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-weight:400;margin-top:6px">
+                + Off-book mkt / mo
+                <input type="number" id="extra-mkt" value="0" min="0" step="50" oninput="renderTHLRatios()" style="width:80px;padding:3px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;text-align:right">
+              </label>
+            </div>
+            <div class="ratio-grid" id="thl-ratio-boxes"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Key margins</div>
+            <div class="ratio-grid" id="thl-margin-boxes"></div>
+          </div>
+        </div>
+        <div class="chart-card">
           <div class="chart-header">
-            <div class="card-title" style="margin:0">Actuals + projection</div>
-            <div class="chart-legend" style="gap:12px">
-              <span class="legend-pill"><span class="dot" style="background:rgba(91,114,247,.5)"></span>Revenue (actual)</span>
-              <span class="legend-pill"><span class="dot" style="background:#f87171"></span>Conservative NP</span>
-              <span class="legend-pill"><span class="dot" style="background:#fbbf24"></span>Trend NP</span>
-              <span class="legend-pill"><span class="dot" style="background:#4ade80"></span>Growth NP</span>
+            <div class="card-title" style="margin:0">Revenue &amp; gross profit</div>
+            <div class="chart-legend">
+              <span><span class="legend-dot" style="background:#3b5af7"></span>Revenue</span>
+              <span><span class="legend-dot" style="background:#4ade80"></span>GP</span>
+              <span><span class="legend-dot" style="background:#fbbf24"></span>NP</span>
             </div>
           </div>
-          <div class="proj-chart-wrap"><canvas id="proj-chart" role="img" aria-label="Projected revenue and profit chart"></canvas></div>
+          <div class="chart-wrap"><canvas id="thl-chart"></canvas></div>
+        </div>
+        <div class="table-card">
+          <div class="card-title">Summary P&L</div>
+          <table id="thl-pnl-table"></table>
+        </div>
+        <div class="table-card" id="thl-client-card" style="display:none">
+          <div class="card-title">Client roster — <span id="thl-client-month"></span></div>
+          <table id="thl-client-table"></table>
         </div>
       </div>
     </div>
-
-    <div class="table-card">
-      <div class="card-title">Month-by-month projection</div>
-      <div style="overflow-x:auto"><table class="proj-table" id="proj-table"></table></div>
+    <div id="thl-proj-view" style="display:none">
+      <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
+        <div class="scenario-bar">
+          <span>Scenario:</span>
+          <button class="scenario-btn active" onclick="applyScenario('trend',this)">Trend (auto)</button>
+          <button class="scenario-btn" onclick="applyScenario('conservative',this)">Conservative</button>
+          <button class="scenario-btn" onclick="applyScenario('growth',this)">Growth</button>
+          <button class="reset-btn" onclick="resetInputs()">↺ Reset</button>
+        </div>
+        <div class="proj-grid">
+          <div class="card input-section">
+            <div class="card-title" style="margin-bottom:.5rem">Assumptions</div>
+            <div class="proj-section-title">Current state (auto-filled)</div>
+            <div class="input-row"><label>Active clients now</label><input type="number" id="p-active-clients" oninput="updateProj()" step="1" style="width:72px"></div>
+            <div class="input-row"><label>Avg revenue / client / mo</label><input type="number" id="p-avg-rev" oninput="updateProj()" step="50" style="width:72px"></div>
+            <div class="proj-section-title">Monthly client movement</div>
+            <div class="input-row"><label>New clients / mo</label><input type="range" min="0" max="10" step="1" id="p-new-clients" oninput="updateProj()"><span class="val-label" id="p-new-clients-lbl"></span></div>
+            <div class="input-row"><label>Clients lost / mo</label><input type="range" min="0" max="8" step="1" id="p-churn" oninput="updateProj()"><span class="val-label" id="p-churn-lbl"></span></div>
+            <div class="proj-section-title">Cost adjustments</div>
+            <div class="input-row"><label>COGS % of revenue</label><input type="range" min="20" max="90" step="1" id="p-cogs-pct" oninput="updateProj()"><span class="val-label" id="p-cogs-pct-lbl"></span></div>
+            <div class="input-row"><label>Fixed expenses / mo</label><input type="number" id="p-fixed-exp" oninput="updateProj()" step="100" style="width:72px"></div>
+            <div class="proj-section-title">Window &amp; target</div>
+            <div class="input-row"><label>Months to project</label><input type="range" min="1" max="12" step="1" id="p-months" oninput="updateProj()"><span class="val-label" id="p-months-lbl"></span></div>
+            <div class="input-row"><label>NP target / month</label><input type="number" id="p-np-target" oninput="updateProj()" step="500" style="width:72px"></div>
+          </div>
+          <div>
+            <div class="proj-kpi-grid" id="proj-kpis"></div>
+            <div class="chart-card" style="margin-bottom:1rem">
+              <div class="chart-header">
+                <div class="card-title" style="margin:0">Actuals + projection</div>
+                <div class="chart-legend">
+                  <span class="legend-pill"><span class="dot" style="background:rgba(91,114,247,.5)"></span>Revenue</span>
+                  <span class="legend-pill"><span class="dot" style="background:#f87171"></span>Conservative</span>
+                  <span class="legend-pill"><span class="dot" style="background:#fbbf24"></span>Trend</span>
+                  <span class="legend-pill"><span class="dot" style="background:#4ade80"></span>Growth</span>
+                </div>
+              </div>
+              <div class="proj-chart-wrap"><canvas id="proj-chart"></canvas></div>
+            </div>
+          </div>
+        </div>
+        <div class="table-card">
+          <div class="card-title">Month-by-month projection</div>
+          <div style="overflow-x:auto"><table class="proj-table" id="proj-table"></table></div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div id="dash-view">
-  <div class="main">
-    <div class="error-banner" id="error-banner"></div>
-
-    <div class="period-bar">
-      <span>Period:</span>
-      <div id="tabs"></div>
-    </div>
-
-    <div class="kpi-grid" id="kpi-grid"></div>
-
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <span>GP : CAC ratio <span style="font-size:10px;color:var(--muted);font-weight:400">Gross profit ÷ marketing spend</span></span>
-          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-weight:400">
-            + Off-book mkt / mo
-            <input type="number" id="extra-mkt" value="0" min="0" step="50"
-              oninput="renderRatios()"
-              style="width:80px;padding:3px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;text-align:right">
-          </label>
+  <!-- HOLDINGS -->
+  <div id="view-holdings" class="view">
+    <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="switchHoldings('all',this)">All Holdings</button>
+        <button class="sub-tab" onclick="switchHoldings('consulting',this)">Consulting</button>
+        <button class="sub-tab" onclick="switchHoldings('airbnb',this)">Airbnb</button>
+      </div>
+      <div class="period-bar"><span>Period:</span><div id="holdings-tabs"></div></div>
+      <div class="overview-kpis" id="holdings-kpis"></div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div class="card-title" style="margin:0">Revenue &amp; net income</div>
+          <div class="chart-legend">
+            <span><span class="legend-dot" style="background:#3b5af7"></span>Revenue</span>
+            <span><span class="legend-dot" style="background:#4ade80"></span>NP</span>
+          </div>
         </div>
-        <div class="ratio-grid" id="ratio-boxes"></div>
+        <div class="chart-wrap"><canvas id="holdings-chart"></canvas></div>
       </div>
-      <div class="card">
-        <div class="card-title">Key margins — selected month</div>
-        <div class="ratio-grid" id="margin-boxes"></div>
+      <div class="table-card">
+        <div class="card-title" id="holdings-table-title">Summary P&L</div>
+        <table id="holdings-table"></table>
       </div>
-    </div>
-
-    <div class="chart-card">
-      <div class="chart-header">
-        <div class="card-title" style="margin:0">Revenue &amp; gross profit</div>
-        <div class="chart-legend">
-          <span><span class="legend-dot" style="background:#5b72f7"></span>Revenue</span>
-          <span><span class="legend-dot" style="background:#4ade80"></span>Gross profit</span>
-          <span><span class="legend-dot" style="background:#fbbf24"></span>Net profit</span>
-        </div>
-      </div>
-      <div class="chart-wrap"><canvas id="rev-chart" role="img" aria-label="Monthly revenue and gross profit"></canvas></div>
-    </div>
-
-    <div class="table-card">
-      <div class="card-title">Summary P&L</div>
-      <table id="pnl-table"></table>
-    </div>
-
-    <div class="table-card" id="client-card" style="display:none">
-      <div class="card-title">Client roster — <span id="client-month-label"></span></div>
-      <table class="client-table" id="client-table"></table>
     </div>
   </div>
+
+  <!-- LOS GRINGOS -->
+  <div id="view-gringos" class="view">
+    <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
+      <div class="empty-state" id="gringos-empty">
+        <p style="font-size:24px;margin-bottom:.5rem">🌮</p>
+        <p>Los Gringos Cafe P&Ls coming soon</p>
+        <p style="margin-top:.5rem;font-size:12px">Add monthly P&L xlsx files to the <strong>Los Gringos Cafe 2026</strong> folder in Drive</p>
+      </div>
+      <div id="gringos-content" style="display:none">
+        <div class="period-bar"><span>Period:</span><div id="gringos-tabs"></div></div>
+        <div class="overview-kpis" id="gringos-kpis"></div>
+        <div class="chart-card">
+          <div class="chart-wrap"><canvas id="gringos-chart"></canvas></div>
+        </div>
+        <div class="table-card">
+          <div class="card-title">Summary P&L</div>
+          <table id="gringos-table"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PERSONAL -->
+  <div id="view-personal" class="view">
+    <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
+      <div class="empty-state">
+        <p style="font-size:24px;margin-bottom:.5rem">👤</p>
+        <p>Personal accounts coming soon</p>
+        <p style="margin-top:.5rem;font-size:12px">Add bank statements to the <strong>Personal Accounts</strong> folder in Drive</p>
+      </div>
+    </div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
 const CLIENT_ID = '31214927009-3633r9noc0pe522slp8l4cbf46jpa4hi.apps.googleusercontent.com';
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
-const FOLDER_NAME = 'Tele-help-Ing PnLs 2026';
+const ROOT_FOLDER = 'All Finn Files 2026';
 const MONTH_ORDER = ['Jan 26','Feb 26','Mar 26','Apr 26','May 26','Jun 26','Jul 26','Aug 26','Sep 26','Oct 26','Nov 26','Dec 26'];
 
-let tokenClient, accessToken, allData = {}, selectedMonth = null, revChart = null;
+let tokenClient, accessToken;
 
-// ── GOOGLE IDENTITY ──────────────────────────────────────────────
+// ── DATA STORES ──────────────────────────────────────────────────
+const thlData = {};      // key -> {metrics}
+const holdingsData = {}; // key -> {metrics, consulting, airbnb}
+const airbnbData = {};   // key -> {revenue, payouts, nights, bookings}
+const gringosData = {};  // key -> {metrics}
+
+// ── GOOGLE AUTH ──────────────────────────────────────────────────
 function initGoogle() {
   tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CLIENT_ID,
-    scope: SCOPES,
+    client_id: CLIENT_ID, scope: SCOPES,
     callback: async (resp) => {
       if (resp.error) { showError('Auth error: ' + resp.error); return; }
       accessToken = resp.access_token;
       document.getElementById('auth-screen').style.display = 'none';
-      await loadDashboard();
+      document.getElementById('app').style.display = 'block';
+      await loadAll();
     }
   });
 }
-
 function signIn() { tokenClient.requestAccessToken(); }
 function signOut() {
   google.accounts.oauth2.revoke(accessToken, () => {
-    accessToken = null; allData = {}; selectedMonth = null;
-    document.getElementById('dashboard').style.display = 'none';
+    accessToken = null;
+    document.getElementById('app').style.display = 'none';
     document.getElementById('auth-screen').style.display = 'flex';
   });
 }
 
-// ── DRIVE API ────────────────────────────────────────────────────
+// ── DRIVE ────────────────────────────────────────────────────────
 async function driveGet(url) {
   const r = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (r.status === 401) { accessToken = null; tokenClient.requestAccessToken({ prompt: '' }); throw new Error('Token expired'); }
   if (!r.ok) throw new Error('Drive API error: ' + r.status);
   return r.json();
 }
-
-async function findFolder() {
-  const q = encodeURIComponent(`name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const data = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`);
-  if (!data.files.length) throw new Error(`Folder "${FOLDER_NAME}" not found in Drive. Check the folder name matches exactly.`);
-  return data.files[0].id;
+async function findFolder(name, parentId) {
+  let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  if (parentId) q += ` and '${parentId}' in parents`;
+  const d = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
+  return d.files[0]?.id || null;
 }
-
-async function listXlsxFiles(folderId) {
-  const q = encodeURIComponent(`'${folderId}' in parents and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false`);
-  const data = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=name`);
-  return data.files;
+async function listFiles(folderId, mimeTypes) {
+  const mimeQ = mimeTypes.map(m => `mimeType='${m}'`).join(' or ');
+  const q = encodeURIComponent(`'${folderId}' in parents and (${mimeQ}) and trashed=false`);
+  const d = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=name`);
+  return d.files;
 }
-
 async function downloadFile(fileId) {
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-    headers: { Authorization: 'Bearer ' + accessToken }
-  });
-  if (!r.ok) throw new Error('Download failed: ' + r.status);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!r.ok) throw new Error('Download failed');
   return r.arrayBuffer();
 }
+async function downloadText(fileId) {
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!r.ok) throw new Error('Download failed');
+  return r.text();
+}
 
-// ── PARSE ────────────────────────────────────────────────────────
+// ── MONTH KEY HELPERS ────────────────────────────────────────────
 function monthKeyFromName(name) {
   name = name.toLowerCase();
-  const map = { jan: 'Jan 26', feb: 'Feb 26', mar: 'Mar 26', apr: 'Apr 26',
-                may: 'May 26', jun: 'Jun 26', jul: 'Jul 26', aug: 'Aug 26',
-                sep: 'Sep 26', oct: 'Oct 26', nov: 'Nov 26', dec: 'Dec 26' };
-  for (const [k, v] of Object.entries(map)) { if (name.includes(k)) return v; }
+  const map = { jan:'Jan 26',feb:'Feb 26',mar:'Mar 26',apr:'Apr 26',may:'May 26',jun:'Jun 26',jul:'Jul 26',aug:'Aug 26',sep:'Sep 26',oct:'Oct 26',nov:'Nov 26',dec:'Dec 26' };
+  for (const [k,v] of Object.entries(map)) { if (name.includes(k)) return v; }
   return null;
 }
 
-// Parse QuickBooks P&L detail export (transaction-level sheet)
+// ── QB P&L PARSER ────────────────────────────────────────────────
+function isDate(v) { return v && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(v).trim()); }
+function rowLabel(row) {
+  const v = row[0]; if (!v) return '';
+  const s = String(v).trim();
+  return isDate(s) ? '' : s;
+}
+function lastNum(row) {
+  for (let c = row.length-1; c >= 0; c--) {
+    if (typeof row[c]==='number') return row[c];
+  }
+  return null;
+}
+
 function parsePnLDetail(rows) {
   const m = { clients: [], expenses: {} };
-
-  // In QB exports, each row has:
-  // col A = date or label, col B = tx type, col C = num, col D = name, col E = description,
-  // col F = item split account, col G = amount (single transaction), col H = running balance
-  // Summary/total rows have: col A = label, last col = the total value
-  // We identify summary rows by NO date in col A and a text label
-
-  function isDate(v) {
-    if (!v) return false;
-    return /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(v).trim());
-  }
-
-  function rowLabel(row) {
-    const v = row[0];
-    if (!v) return '';
-    const s = String(v).trim();
-    if (isDate(s)) return '';  // transaction row, not a summary row
-    return s;
-  }
-
-  function firstNum(row) {
-    // For summary rows, the total is in the LAST non-null numeric cell
-    for (let c = row.length - 1; c >= 0; c--) {
-      if (typeof row[c] === 'number') return row[c];
-    }
-    return null;
-  }
-
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r] || [];
     const lbl = rowLabel(row);
-    if (!lbl) continue;  // skip transaction rows and blank rows
-
-    const num = firstNum(row);
-
-    // Revenue
-    if (/^total for services$/i.test(lbl)) {
-      if (num != null) m.revenue = num;
-    }
-    // Also catch "Total for Income with sub-accounts" as fallback
-    if (/^total for income with sub-?accounts$/i.test(lbl)) {
-      if (num != null && !m.revenue) m.revenue = num;
-    }
-
-    // COGS — use the authoritative "Total for Cost of Goods Sold" (capital G, final rollup)
-    // This appears AFTER the sub-account lines and contains the full COGS total
-    // Match both 'Total for Cost of Goods Sold' and 'Total for Cost of Goods Sold with sub-accounts'
-    if (/^total for cost of goods sold(\s+with\s+sub-?accounts)?$/i.test(lbl)) {
-      if (num != null) m.cogs = num;  // overwrite each time — last match is the authoritative rollup
-    }
-
-    // Gross Profit
-    if (/^gross profit$/i.test(lbl)) {
-      if (num != null) m.grossProfit = num;
-    }
-
-    // Total Expenses — "Total for Expenses with sub-accounts" or "Total for Expenses"
-    if (/^total for expenses(\s+with\s+sub-?accounts)?$/i.test(lbl)) {
-      if (num != null) m.totalExpenses = num;
-    }
-
-    // Net Income
-    if (/^net income$/i.test(lbl)) {
-      if (num != null) m.np = num;
-    }
-
-    // Marketing spend — use the with-sub-accounts rollup if available, else base line
-    if (/^total for advertising & marketing with sub-?accounts$/i.test(lbl)) {
-      if (num != null) m.marketing = num;
-    }
-    if (/^total for advertising & marketing$/i.test(lbl)) {
-      if (num != null && !m.marketing) m.marketing = num; // fallback if no sub-accounts line
-    }
-
-    // Expense categories for breakdown
+    if (!lbl) continue;
+    const num = lastNum(row);
+    if (/total.*(for\s+)?services/i.test(lbl) && !/sub.?account/i.test(lbl)) { if (num!=null) m.revenue = num; }
+    if (/total.*(for\s+)?income(\s+with\s+sub.?accounts)?$/i.test(lbl)) { if (num!=null && !m.revenue) m.revenue = num; }
+    if (/^total for cost of goods sold(\s+with\s+sub-?accounts)?$/i.test(lbl)) { if (num!=null) m.cogs = num; }
+    if (/^gross profit$/i.test(lbl)) { if (num!=null) m.grossProfit = num; }
+    if (/^total for expenses(\s+with\s+sub-?accounts)?$/i.test(lbl)) { if (num!=null) m.totalExpenses = num; }
+    if (/^net income$/i.test(lbl)) { if (num!=null) m.np = num; }
+    if (/^total for advertising & marketing with sub-?accounts$/i.test(lbl)) { if (num!=null) m.marketing = num; }
+    if (/^total for advertising & marketing$/i.test(lbl)) { if (num!=null && !m.marketing) m.marketing = num; }
     const expMatch = lbl.match(/^total for (.+?)(?:\s+with\s+sub-?accounts)?$/i);
     if (expMatch) {
       const cat = expMatch[1].trim();
-      const skip = /^(services|income|cost of goods|subcontractor|expenses|cost of goods sold)$/i.test(cat);
-      if (!skip && num != null) {
+      if (!/^(services|income|cost of goods|subcontractor|expenses|cost of goods sold)$/i.test(cat) && num!=null) {
         m.expenses[cat] = num;
       }
     }
   }
-
-  // Build client list from invoice transaction rows
-  // QB format: col A=date, col B=type, col C=num, col D=name, col E=desc, col F=account, col G=amount
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r] || [];
-    if (!isDate(String(row[0] || '').trim())) continue;
-    const txType = String(row[1] || '').trim();
-    const txName = String(row[3] || '').trim();
-    // Amount is col G (index 6) — single transaction amount, not running balance
-    const txAmt = typeof row[6] === 'number' ? row[6] : null;
-    if (!/^invoice$/i.test(txType) || !txName || txAmt == null) continue;
-    const existing = m.clients.find(c => c.name === txName);
-    if (existing) existing.revenue += txAmt;
-    else m.clients.push({ name: txName, revenue: txAmt });
+  // Safety: back-calc COGS from GP
+  if (m.grossProfit!=null && m.revenue!=null) {
+    const implied = m.revenue - m.grossProfit;
+    if (Math.abs((m.cogs||0) - implied) > 500) m.cogs = implied;
   }
-
-  // Derive missing values
-  if (!m.grossProfit && m.revenue != null && m.cogs != null) m.grossProfit = m.revenue - m.cogs;
-  if (!m.totalExpenses && m.grossProfit != null && m.np != null) m.totalExpenses = m.grossProfit - m.np;
+  if (!m.grossProfit && m.revenue!=null && m.cogs!=null) m.grossProfit = m.revenue - m.cogs;
+  if (!m.totalExpenses && m.grossProfit!=null && m.np!=null) m.totalExpenses = m.grossProfit - m.np;
   if (m.revenue) {
-    m.mrr = m.revenue;
-    m.arr = m.revenue * 12;
+    m.mrr = m.revenue; m.arr = m.revenue * 12;
     m.gpPct = m.grossProfit / m.revenue;
     m.npPct = m.np / m.revenue;
   }
   m.overhead = m.totalExpenses;
-  m.clients.sort((a, b) => b.revenue - a.revenue);
+  // Client list from invoice rows
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] || [];
+    if (!isDate(String(row[0]||'').trim())) continue;
+    const txType = String(row[1]||'').trim();
+    const txName = String(row[3]||'').trim();
+    const txAmt  = typeof row[6]==='number' ? row[6] : null;
+    if (!/^invoice$/i.test(txType) || !txName || txAmt==null) continue;
+    const ex = m.clients.find(c => c.name===txName);
+    if (ex) ex.revenue += txAmt; else m.clients.push({ name:txName, revenue:txAmt });
+  }
+  m.clients.sort((a,b) => b.revenue - a.revenue);
   return m;
 }
 
-// ── LOAD DASHBOARD ───────────────────────────────────────────────
-async function loadDashboard() {
-  // If token is missing or expired, silently request a new one first
-  if (!accessToken) { tokenClient.requestAccessToken({ prompt: '' }); return; }
-  showLoading('Finding your PnLs folder...');
-  try {
-    const folderId = await findFolder();
-    setLoadingMsg('Listing files...');
-    const files = await listXlsxFiles(folderId);
-    if (!files.length) throw new Error('No xlsx files found in the folder.');
-
-    for (const file of files) {
-      const key = monthKeyFromName(file.name);
-      if (!key || /unearned/i.test(file.name)) continue;
-      setLoadingMsg(`Parsing ${file.name}...`);
-      const buf = await downloadFile(file.id);
-      const wb = XLSX.read(buf, { type: 'array' });
-      const sheetName = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null });
-      allData[key] = { metrics: parsePnLDetail(rows), fileName: file.name, modifiedTime: file.modifiedTime };
-    }
-
-    hideLoading();
-    document.getElementById('dashboard').style.display = 'block';
-    document.getElementById('last-refresh').textContent = 'Refreshed ' + new Date().toLocaleTimeString();
-
-    const loaded = MONTH_ORDER.filter(k => allData[k]);
-    if (!selectedMonth || !allData[selectedMonth]) selectedMonth = loaded[loaded.length - 1];
-    renderAll();
-  } catch (e) {
-    hideLoading();
-    if (e.message.includes('401')) {
-      // Token expired — silently get a new one and retry
-      accessToken = null;
-      tokenClient.requestAccessToken({ prompt: '' });
-    } else {
-      showError(e.message);
-      document.getElementById('dashboard').style.display = 'block';
-    }
+// Holdings parser — splits Airbnb vs Consulting
+function parseHoldingsPnL(rows) {
+  const full = parsePnLDetail(rows);
+  // Airbnb income: any income row where description contains 'airbnb'
+  let airbnbIncome = 0;
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] || [];
+    if (!isDate(String(row[0]||'').trim())) continue;
+    const desc = String(row[4]||row[3]||'').toLowerCase();
+    const amt  = typeof row[6]==='number' ? row[6] : (typeof row[5]==='number' ? row[5] : null);
+    if (/airbnb/.test(desc) && amt!=null && amt > 0) airbnbIncome += amt;
   }
-}
+  // Airbnb expenses: cleaning, utilities
+  const airbnbExpKeys = ['cleaning','utilities','disposal','internet','home depot','home goods','license'];
+  let airbnbExpenses = 0;
+  for (const [cat, val] of Object.entries(full.expenses || {})) {
+    if (airbnbExpKeys.some(k => cat.toLowerCase().includes(k))) airbnbExpenses += val;
+  }
+  // Also check COGS (cleaning is in COGS)
+  if (full.cogs) airbnbExpenses += full.cogs;
 
-// ── RENDER ───────────────────────────────────────────────────────
-function renderAll() {
-  renderTabs();
-  renderKPIs();
-  renderRatios();
-  renderChart();
-  renderPnLTable();
-  renderClientTable();
-}
+  const airbnbNP = airbnbIncome - airbnbExpenses;
+  const consultingRevenue = (full.revenue||0) - airbnbIncome;
+  const consultingExpenses = (full.totalExpenses||0) - airbnbExpenses;
+  const consultingNP = consultingRevenue - consultingExpenses;
 
-function getYTDMetrics() {
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  const sum = (key) => loaded.reduce((s, k) => s + (allData[k].metrics[key] || 0), 0);
-  const revenue = sum('revenue');
-  const cogs = sum('cogs');
-  const grossProfit = sum('grossProfit');
-  const totalExpenses = sum('totalExpenses');
-  const np = sum('np');
-  const expAgg = loaded.reduce((acc, k) => {
-    Object.entries(allData[k].metrics.expenses || {}).forEach(([cat, val]) => { acc[cat] = (acc[cat] || 0) + val; });
-    return acc;
-  }, {});
   return {
-    revenue, cogs, grossProfit, totalExpenses, np,
-    mrr: loaded.length ? revenue / loaded.length : 0,
-    arr: revenue,
-    gpPct: revenue ? grossProfit / revenue : null,
-    npPct: revenue ? np / revenue : null,
-    overhead: totalExpenses,
-    clients: allData[loaded[loaded.length-1]]?.metrics?.clients || [],
-    expenses: expAgg,
+    ...full,
+    airbnb: { revenue: airbnbIncome, expenses: airbnbExpenses, np: airbnbNP },
+    consulting: { revenue: consultingRevenue, expenses: consultingExpenses, np: consultingNP },
   };
 }
 
-function currentMetrics() {
-  if (selectedMonth === 'YTD') return getYTDMetrics();
-  return allData[selectedMonth]?.metrics || {};
+// ── AIRBNB CSV PARSER ────────────────────────────────────────────
+function parseAirbnbCSV(csvText) {
+  const results = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+  const byMonth = {};
+  for (const row of results.data) {
+    if (row['Type'] !== 'Reservation' && row['Type'] !== 'Resolution Payout') continue;
+    const startDate = row['Start date'] || row['Date'];
+    if (!startDate) continue;
+    try {
+      const d = new Date(startDate);
+      const mo = d.toLocaleString('en-US', { month:'short' }) + ' ' + String(d.getFullYear()).slice(2);
+      if (!MONTH_ORDER.includes(mo)) continue;
+      if (!byMonth[mo]) byMonth[mo] = { revenue:0, nights:0, bookings:0, fees:0 };
+      const gross = parseFloat(row['Gross earnings']||0);
+      const fee   = parseFloat(row['Service fee']||0);
+      const nights= parseInt(row['Nights']||0);
+      byMonth[mo].revenue   += gross;
+      byMonth[mo].fees      += fee;
+      byMonth[mo].nights    += nights;
+      byMonth[mo].bookings  += 1;
+    } catch(e) {}
+  }
+  // Payouts by month
+  for (const row of results.data) {
+    if (row['Type'] !== 'Payout') continue;
+    const d = new Date(row['Date']);
+    const mo = d.toLocaleString('en-US',{month:'short'}) + ' ' + String(d.getFullYear()).slice(2);
+    if (!MONTH_ORDER.includes(mo)) continue;
+    if (!byMonth[mo]) byMonth[mo] = { revenue:0,nights:0,bookings:0,fees:0,payouts:0 };
+    byMonth[mo].payouts = (byMonth[mo].payouts||0) + parseFloat(row['Paid out']||0);
+  }
+  return byMonth;
 }
 
-function renderTabs() {
-  const container = document.getElementById('tabs');
-  container.innerHTML = '';
-  MONTH_ORDER.forEach(k => {
-    if (!allData[k]) return;
-    const t = document.createElement('button');
-    t.className = 'tab loaded' + (k === selectedMonth ? ' active' : '');
-    t.textContent = k;
-    t.onclick = () => { selectedMonth = k; renderAll(); };
-    container.appendChild(t);
-  });
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  if (loaded.length >= 1) {
-    const t = document.createElement('button');
-    t.className = 'tab loaded' + (selectedMonth === 'YTD' ? ' active' : '');
-    t.textContent = 'YTD 2026';
-    t.style.marginLeft = '10px';
-    t.onclick = () => { selectedMonth = 'YTD'; renderAll(); };
-    container.appendChild(t);
+// ── LOAD ALL ─────────────────────────────────────────────────────
+async function loadAll() {
+  if (!accessToken) { tokenClient.requestAccessToken({ prompt:'' }); return; }
+  showLoading('Finding All Finn Files 2026...');
+  try {
+    const rootId = await findFolder(ROOT_FOLDER);
+    if (!rootId) throw new Error(`Folder "${ROOT_FOLDER}" not found in Drive`);
+
+    // THL
+    setLoadingMsg('Loading THL P&Ls...');
+    const thlFolderId = await findFolder('Tele-Help-Ing 2026', rootId);
+    if (thlFolderId) {
+      const files = await listFiles(thlFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      for (const file of files) {
+        const key = monthKeyFromName(file.name);
+        if (!key || /unearned/i.test(file.name)) continue;
+        setLoadingMsg(`Parsing THL ${file.name}...`);
+        const buf = await downloadFile(file.id);
+        const wb = XLSX.read(buf, { type:'array' });
+        const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+        thlData[key] = { metrics: parsePnLDetail(rows), fileName: file.name };
+      }
+    }
+
+    // Holdings
+    setLoadingMsg('Loading Holdings P&Ls...');
+    const holdFolderId = await findFolder('Codys Holding', rootId);
+    if (holdFolderId) {
+      const files = await listFiles(holdFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      for (const file of files) {
+        const key = monthKeyFromName(file.name);
+        if (!key) continue;
+        setLoadingMsg(`Parsing Holdings ${file.name}...`);
+        const buf = await downloadFile(file.id);
+        const wb = XLSX.read(buf, { type:'array' });
+        const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+        holdingsData[key] = { metrics: parseHoldingsPnL(rows), fileName: file.name };
+      }
+    }
+
+    // Airbnb CSVs
+    setLoadingMsg('Loading Airbnb data...');
+    const airbnbFolderId = await findFolder('Airbnb 2026', rootId);
+    if (airbnbFolderId) {
+      const files = await listFiles(airbnbFolderId, ['text/csv','text/plain','application/vnd.ms-excel']);
+      for (const file of files) {
+        setLoadingMsg(`Parsing Airbnb ${file.name}...`);
+        const text = await downloadText(file.id);
+        const parsed = parseAirbnbCSV(text);
+        for (const [mo, data] of Object.entries(parsed)) {
+          airbnbData[mo] = data;
+        }
+      }
+    }
+
+    // Los Gringos
+    setLoadingMsg('Loading Los Gringos P&Ls...');
+    const gringosFolderId = await findFolder('Los Gringos Cafe 2026', rootId);
+    if (gringosFolderId) {
+      const files = await listFiles(gringosFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      for (const file of files) {
+        const key = monthKeyFromName(file.name);
+        if (!key) continue;
+        const buf = await downloadFile(file.id);
+        const wb = XLSX.read(buf, { type:'array' });
+        const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+        gringosData[key] = { metrics: parsePnLDetail(rows), fileName: file.name };
+      }
+    }
+
+    hideLoading();
+    document.getElementById('last-refresh').textContent = 'Refreshed ' + new Date().toLocaleTimeString();
+    renderAll();
+  } catch(e) {
+    hideLoading();
+    if (e.message.includes('Token expired')) return;
+    showError(e.message);
   }
 }
 
-function fmt$(n) {
-  if (n == null || isNaN(n)) return '—';
-  return (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
-}
-function fmtPct(n) {
-  if (n == null || isNaN(n)) return '—';
-  // handle already-percent values (e.g. 45.15 vs 0.4515)
-  const v = Math.abs(n) > 1.5 ? n : n * 100;
-  return v.toFixed(1) + '%';
-}
-function fmtX(n) {
-  if (n == null || isNaN(n)) return '—';
-  return n.toFixed(2) + ' : 1';
-}
-function deltaClass(v) { return v > 0 ? 'up' : v < 0 ? 'dn' : 'neu'; }
-function deltaStr(cur, prev, isMoney) {
-  if (prev == null || cur == null) return '';
-  const d = cur - prev;
-  const sign = d >= 0 ? '▲ ' : '▼ ';
-  return sign + (isMoney ? fmt$(Math.abs(d)) : fmtPct(Math.abs(d))) + ' vs prior';
+// ── RENDER ALL ───────────────────────────────────────────────────
+function renderAll() {
+  renderOverview();
+  renderTHL();
+  renderHoldings();
+  renderGringos();
 }
 
-function renderKPIs() {
-  const m = currentMetrics();
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  const prevKey = selectedMonth !== 'YTD' ? loaded[loaded.indexOf(selectedMonth) - 1] : null;
-  const prev = prevKey ? allData[prevKey].metrics : null;
+// ── FORMAT HELPERS ───────────────────────────────────────────────
+function fmt$(n) { if (n==null||isNaN(n)) return '—'; return (n<0?'-$':'$')+Math.abs(Math.round(n)).toLocaleString(); }
+function fmtPct(n) { if (n==null||isNaN(n)) return '—'; const v=Math.abs(n)>1.5?n:n*100; return v.toFixed(1)+'%'; }
+function deltaStr(cur,prev,isMoney) {
+  if (prev==null||cur==null) return '';
+  const d=cur-prev; const sign=d>=0?'▲ ':'▼ ';
+  return sign+(isMoney?fmt$(Math.abs(d)):fmtPct(Math.abs(d)))+' vs prior';
+}
 
-  const kpis = [
-    { label: 'Revenue', val: fmt$(m.revenue), delta: prev ? deltaStr(m.revenue, prev.revenue, true) : '', pos: (m.revenue||0) >= (prev?.revenue||0) },
-    { label: 'Gross profit', val: fmt$(m.grossProfit), delta: prev ? deltaStr(m.grossProfit, prev.grossProfit, true) : '', pos: (m.grossProfit||0) >= (prev?.grossProfit||0) },
-    { label: 'GP %', val: fmtPct(m.gpPct), delta: '', pos: true },
-    { label: 'COGS', val: fmt$(m.cogs), delta: '', pos: false },
-    { label: 'Total expenses', val: fmt$(m.totalExpenses), delta: '', pos: false },
-    { label: 'Net income', val: fmt$(m.np), delta: prev ? deltaStr(m.np, prev.np, true) : '', pos: (m.np||0) >= 0 },
-    { label: 'NP %', val: fmtPct(m.npPct), delta: '', pos: (m.npPct||0) >= 0 },
+// ── OVERVIEW ─────────────────────────────────────────────────────
+function getLatestMetrics(store) {
+  const loaded = MONTH_ORDER.filter(k => store[k]);
+  if (!loaded.length) return null;
+  return store[loaded[loaded.length-1]].metrics;
+}
+function getYTDSum(store, key) {
+  return MONTH_ORDER.filter(k => store[k]).reduce((s,k) => s + (store[k].metrics[key]||0), 0);
+}
+
+function renderOverview() {
+  const entities = [
+    { name:'Tele-Help-Ing', sub:'Staffing', store: thlData, color:'#7c6ef7' },
+    { name:"Cody's Holdings", sub:'Consulting + Airbnb', store: holdingsData, color:'#4ade80' },
+    { name:'Los Gringos Cafe', sub:'Restaurant', store: gringosData, color:'#fbbf24' },
   ];
 
-  document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
-    <div class="kpi">
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-val" style="color:${k.val.startsWith('-') ? 'var(--red)' : 'var(--text)'}">${k.val}</div>
-      ${k.delta ? `<div class="kpi-delta ${k.pos ? 'up' : 'dn'}">${k.delta}</div>` : ''}
-    </div>`).join('');
+  // Total YTD across all entities
+  const totalRev = entities.reduce((s,e) => s + getYTDSum(e.store,'revenue'), 0);
+  const totalGP  = entities.reduce((s,e) => s + getYTDSum(e.store,'grossProfit'), 0);
+  const totalNP  = entities.reduce((s,e) => s + getYTDSum(e.store,'np'), 0);
+  const airbnbYTD = Object.values(airbnbData).reduce((s,m) => s + (m.payouts||m.revenue||0), 0);
+
+  document.getElementById('overview-kpis').innerHTML = [
+    { label:'Total Revenue YTD',    val: fmt$(totalRev) },
+    { label:'Total Gross Profit YTD', val: fmt$(totalGP), color: totalGP>=0?'var(--green)':'' },
+    { label:'Total Net Income YTD', val: fmt$(totalNP), color: totalNP>=0?'var(--green)':'var(--red)' },
+    { label:'Airbnb Payouts YTD',   val: fmt$(airbnbYTD) },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+
+  const rows = entities.map(e => {
+    const m = getLatestMetrics(e.store);
+    const ytdRev = getYTDSum(e.store,'revenue');
+    const ytdGP  = getYTDSum(e.store,'grossProfit');
+    const ytdNP  = getYTDSum(e.store,'np');
+    const npPct  = ytdRev ? ytdNP/ytdRev : null;
+    const hasData = MONTH_ORDER.some(k => e.store[k]);
+    return `<div class="entity-row" onclick="showEntity('${e.name==='Tele-Help-Ing'?'thl':e.name.includes('Holdings')?'holdings':'gringos'}',null)">
+      <div><div class="ent-name" style="color:${e.color}">${e.name}</div><div class="ent-sub">${e.sub}</div></div>
+      <div class="ent-val"><div class="ent-label">Revenue YTD</div><div class="ent-num">${hasData?fmt$(ytdRev):'No data'}</div></div>
+      <div class="ent-val"><div class="ent-label">Gross Profit</div><div class="ent-num">${hasData?fmt$(ytdGP):'—'}</div></div>
+      <div class="ent-val"><div class="ent-label">Net Income</div><div class="ent-num" style="color:${ytdNP>=0?'var(--green)':'var(--red)'}">${hasData?fmt$(ytdNP):'—'}</div></div>
+      <div class="ent-val"><div class="ent-label">NP %</div><div class="ent-num">${hasData?fmtPct(npPct):'—'}</div></div>
+      <div class="ent-arrow">›</div>
+    </div>`;
+  }).join('');
+  document.getElementById('entity-rows').innerHTML = rows;
+}
+
+// ── THL ──────────────────────────────────────────────────────────
+let thlSelectedMonth = null;
+let thlChart = null;
+
+function renderTHL() {
+  const loaded = MONTH_ORDER.filter(k => thlData[k]);
+  if (!loaded.length) return;
+  if (!thlSelectedMonth || !thlData[thlSelectedMonth]) thlSelectedMonth = loaded[loaded.length-1];
+
+  // Tabs
+  const tabsEl = document.getElementById('thl-tabs');
+  tabsEl.innerHTML = '';
+  loaded.forEach(k => {
+    const t = document.createElement('button');
+    t.className = 'tab loaded' + (k===thlSelectedMonth?' active':'');
+    t.textContent = k;
+    t.onclick = () => { thlSelectedMonth=k; renderTHL(); };
+    tabsEl.appendChild(t);
+  });
+  // YTD tab
+  const ytd = document.createElement('button');
+  ytd.className = 'tab loaded' + (thlSelectedMonth==='YTD'?' active':'');
+  ytd.textContent = 'YTD 2026'; ytd.style.marginLeft='8px';
+  ytd.onclick = () => { thlSelectedMonth='YTD'; renderTHL(); };
+  tabsEl.appendChild(ytd);
+
+  const m = thlSelectedMonth==='YTD' ? getTHLYTD() : thlData[thlSelectedMonth].metrics;
+  const prevKey = thlSelectedMonth==='YTD' ? null : loaded[loaded.indexOf(thlSelectedMonth)-1];
+  const prev = prevKey ? thlData[prevKey].metrics : null;
+
+  // KPIs
+  document.getElementById('thl-kpis').innerHTML = [
+    { label:'Revenue',      val:fmt$(m.revenue),       delta:prev?deltaStr(m.revenue,prev.revenue,true):'',       pos:(m.revenue||0)>=(prev?.revenue||0) },
+    { label:'Gross Profit', val:fmt$(m.grossProfit),   delta:prev?deltaStr(m.grossProfit,prev.grossProfit,true):'', pos:(m.grossProfit||0)>=(prev?.grossProfit||0) },
+    { label:'GP %',         val:fmtPct(m.gpPct),       delta:'', pos:true },
+    { label:'COGS',         val:fmt$(m.cogs),          delta:'', pos:false },
+    { label:'Total Expenses',val:fmt$(m.totalExpenses),delta:'', pos:false },
+    { label:'Net Income',   val:fmt$(m.np),            delta:prev?deltaStr(m.np,prev.np,true):'',                 pos:(m.np||0)>=0, color:(m.np||0)>=0?'var(--green)':'var(--red)' },
+    { label:'NP %',         val:fmtPct(m.npPct),       delta:'', pos:(m.npPct||0)>=0 },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:k.val.startsWith('-')?'color:var(--red)':''}">${k.val}</div>${k.delta?`<div class="kpi-delta ${k.pos?'up':'dn'}">${k.delta}</div>`:''}</div>`).join('');
+
+  renderTHLRatios();
+
+  // Chart
+  const labels = loaded;
+  const revs = loaded.map(k => thlData[k].metrics.revenue||0);
+  const gps  = loaded.map(k => thlData[k].metrics.grossProfit||0);
+  const nps  = loaded.map(k => thlData[k].metrics.np||0);
+  if (thlChart) thlChart.destroy();
+  thlChart = new Chart(document.getElementById('thl-chart'), {
+    type:'bar', data:{ labels, datasets:[
+      { label:'Revenue',     data:revs, backgroundColor:'#3b5af7', borderRadius:4 },
+      { label:'Gross Profit',data:gps,  backgroundColor:'#4ade80', borderRadius:4 },
+      { label:'Net Income',  data:nps,  backgroundColor:nps.map(v=>v>=0?'#fbbf24':'#f87171'), borderRadius:4 },
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}}, x:{ticks:{color:'#888'},grid:{display:false}} }}
+  });
+
+  // P&L table
+  const pnlRows = [
+    { label:'Revenue',       key:'revenue',      bold:true },
+    { label:'COGS',          key:'cogs' },
+    { label:'Gross profit',  key:'grossProfit',  bold:true },
+    { label:'GP %',          key:'gpPct',        pct:true },
+    { label:'Expenses',      key:'totalExpenses' },
+    { label:'Net income',    key:'np',           bold:true },
+    { label:'NP %',          key:'npPct',        pct:true },
+  ];
+  const ytdSum = key => loaded.reduce((s,k)=>s+(thlData[k].metrics[key]||0),0);
+  const th = `<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
+  const tb = '<tbody>'+pnlRows.map(r=>{
+    const cls = r.bold?'row-bold':r.pct?'row-pct':'';
+    const cells = loaded.map(k=>{ const v=thlData[k].metrics[r.key]; return `<td class="${!r.pct&&v<0?'neg':''}">${r.pct?fmtPct(v):fmt$(v)}</td>`; }).join('');
+    const ytdV = r.pct?null:ytdSum(r.key);
+    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td${ytdV<0?' class="neg"':''}>${r.pct?'—':fmt$(ytdV)}</td></tr>`;
+  }).join('')+'</tbody>';
+  document.getElementById('thl-pnl-table').innerHTML = th+tb;
+
+  // Client table
+  if (m.clients?.length && thlSelectedMonth!=='YTD') {
+    document.getElementById('thl-client-card').style.display='block';
+    document.getElementById('thl-client-month').textContent = thlSelectedMonth;
+    const total = m.clients.reduce((s,c)=>s+c.revenue,0);
+    document.getElementById('thl-client-table').innerHTML =
+      `<thead><tr><th style="text-align:left">Client</th><th>Revenue</th><th>% of total</th></tr></thead><tbody>`+
+      m.clients.map(c=>`<tr><td>${c.name}</td><td>${fmt$(c.revenue)}</td><td style="color:var(--muted)">${total?((c.revenue/total)*100).toFixed(1)+'%':'—'}</td></tr>`).join('')+
+      '</tbody>';
+  } else { document.getElementById('thl-client-card').style.display='none'; }
+}
+
+function getTHLYTD() {
+  const loaded = MONTH_ORDER.filter(k=>thlData[k]);
+  const sum = key => loaded.reduce((s,k)=>s+(thlData[k].metrics[key]||0),0);
+  const revenue=sum('revenue'), cogs=sum('cogs'), grossProfit=sum('grossProfit'), totalExpenses=sum('totalExpenses'), np=sum('np');
+  return { revenue,cogs,grossProfit,totalExpenses,np,
+    gpPct:revenue?grossProfit/revenue:null, npPct:revenue?np/revenue:null,
+    marketing:sum('marketing'), clients:[] };
 }
 
 function calcGpCac(months) {
-  const extraPerMo = parseFloat(document.getElementById('extra-mkt')?.value || 0) || 0;
-  const gp  = months.reduce((s,k) => s + (allData[k]?.metrics?.grossProfit || 0), 0);
-  const mkt = months.reduce((s,k) => s + (allData[k]?.metrics?.marketing   || 0), 0) + (extraPerMo * months.length);
-  return mkt > 0 ? gp / mkt : null;
+  const extra = parseFloat(document.getElementById('extra-mkt')?.value||0)||0;
+  const gp  = months.reduce((s,k)=>s+(thlData[k]?.metrics?.grossProfit||0),0);
+  const mkt = months.reduce((s,k)=>s+(thlData[k]?.metrics?.marketing||0),0) + extra*months.length;
+  return mkt>0?gp/mkt:null;
 }
 
-function totalMktWithExtra(months) {
-  const extraPerMo = parseFloat(document.getElementById('extra-mkt')?.value || 0) || 0;
-  const bookMkt = months.reduce((s,k) => s + (allData[k]?.metrics?.marketing || 0), 0);
-  const extra = extraPerMo * months.length;
-  return { bookMkt, extra, total: bookMkt + extra };
+function renderTHLRatios() {
+  const m = thlSelectedMonth==='YTD' ? getTHLYTD() : (thlData[thlSelectedMonth]?.metrics||{});
+  const loaded = MONTH_ORDER.filter(k=>thlData[k]);
+  const thisMo = thlSelectedMonth==='YTD' ? loaded[loaded.length-1] : thlSelectedMonth;
+  const moIdx  = loaded.indexOf(thisMo);
+  const moCac  = calcGpCac([thisMo]);
+  const qtdCac = calcGpCac(loaded.slice(Math.max(0,moIdx-2),moIdx+1));
+  const ytdCac = calcGpCac(loaded);
+  const rc = v => v==null?'':v>=3?'var(--green)':v>=1.5?'var(--amber)':'var(--red)';
+  const extra = parseFloat(document.getElementById('extra-mkt')?.value||0)||0;
+
+  document.getElementById('thl-ratio-boxes').innerHTML = `
+    <div class="ratio-box"><div class="ratio-lbl">This month</div>
+      <div class="ratio-big" style="color:${rc(moCac)}">${moCac!=null?moCac.toFixed(2)+' : 1':'—'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">GP ${fmt$(thlData[thisMo]?.metrics?.grossProfit)} ÷ Mkt ${fmt$((thlData[thisMo]?.metrics?.marketing||0)+extra)}</div>
+    </div>
+    <div class="ratio-box"><div class="ratio-lbl">Last 3 months</div>
+      <div class="ratio-big" style="color:${rc(qtdCac)}">${qtdCac!=null?qtdCac.toFixed(2)+' : 1':'—'}</div>
+    </div>
+    <div class="ratio-box" style="grid-column:span 2"><div class="ratio-lbl">YTD 2026</div>
+      <div class="ratio-big" style="color:${rc(ytdCac)}">${ytdCac!=null?ytdCac.toFixed(2)+' : 1':'—'}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">GP ${fmt$(loaded.reduce((s,k)=>s+(thlData[k]?.metrics?.grossProfit||0),0))} ÷ Mkt ${fmt$(loaded.reduce((s,k)=>s+(thlData[k]?.metrics?.marketing||0),0)+extra*loaded.length)}</div>
+    </div>`;
+
+  document.getElementById('thl-margin-boxes').innerHTML = `
+    <div class="ratio-box"><div class="ratio-lbl">Gross margin</div><div class="ratio-big" style="color:${(m.gpPct||0)>=0.4?'var(--green)':'var(--amber)'}">${fmtPct(m.gpPct)}</div></div>
+    <div class="ratio-box"><div class="ratio-lbl">Net margin</div><div class="ratio-big" style="color:${(m.npPct||0)>=0?'var(--green)':'var(--red)'}">${fmtPct(m.npPct)}</div></div>
+    <div class="ratio-box"><div class="ratio-lbl">Revenue</div><div class="ratio-big" style="font-size:20px">${fmt$(m.revenue)}</div></div>
+    <div class="ratio-box"><div class="ratio-lbl">Net income</div><div class="ratio-big" style="font-size:20px;color:${(m.np||0)>=0?'var(--green)':'var(--red)'}">${fmt$(m.np)}</div></div>`;
 }
 
-function renderRatios() {
-  const m = currentMetrics();
-  const loaded2 = MONTH_ORDER.filter(k => allData[k]);
-  // Compute GP:CAC for monthly, quarterly (last 3), and YTD
-  let moCac, qtdCac, ytdCac;
-  const thisMo  = selectedMonth === 'YTD' ? loaded2[loaded2.length-1] : selectedMonth;
-  const thisMoI = loaded2.indexOf(thisMo);
-  moCac  = calcGpCac([thisMo]);
-  qtdCac = calcGpCac(loaded2.slice(Math.max(0, thisMoI - 2), thisMoI + 1));
-  ytdCac = calcGpCac(loaded2);
+// ── HOLDINGS ─────────────────────────────────────────────────────
+let holdingsSelectedMonth = null;
+let holdingsSubView = 'all';
+let holdingsChart = null;
 
-  function ratioColor(v) { return v == null ? '' : v >= 3 ? 'var(--green)' : v >= 1.5 ? 'var(--amber)' : 'var(--red)'; }
+function switchHoldings(sub, btn) {
+  holdingsSubView = sub;
+  document.querySelectorAll('.sub-tab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  renderHoldings();
+}
 
-  const thisMoKey = selectedMonth === 'YTD' ? loaded2[loaded2.length-1] : selectedMonth;
-  const moMkt   = totalMktWithExtra([thisMoKey]);
-  const moIdx   = loaded2.indexOf(thisMoKey);
-  const qtdKeys = loaded2.slice(Math.max(0, moIdx-2), moIdx+1);
-  const qtdMkt  = totalMktWithExtra(qtdKeys);
-  const ytdMkt  = totalMktWithExtra(loaded2);
-  const extraPerMo = parseFloat(document.getElementById('extra-mkt')?.value || 0) || 0;
+function renderHoldings() {
+  const loaded = MONTH_ORDER.filter(k=>holdingsData[k]);
+  // Also use airbnb data for airbnb sub-view months
+  const airbnbLoaded = MONTH_ORDER.filter(k=>airbnbData[k]);
+  const allLoaded = [...new Set([...loaded, ...airbnbLoaded])].sort((a,b)=>MONTH_ORDER.indexOf(a)-MONTH_ORDER.indexOf(b));
 
-  function mktBreakdown(mktObj, nMonths) {
-    if (mktObj.extra > 0)
-      return `$${Math.round(mktObj.bookMkt).toLocaleString()} on-book + $${Math.round(mktObj.extra).toLocaleString()} off-book`;
-    return `$${Math.round(mktObj.total).toLocaleString()}`;
+  if (!allLoaded.length) return;
+  if (!holdingsSelectedMonth) holdingsSelectedMonth = allLoaded[allLoaded.length-1];
+
+  // Tabs
+  const tabsEl = document.getElementById('holdings-tabs');
+  tabsEl.innerHTML = '';
+  allLoaded.forEach(k => {
+    const t = document.createElement('button');
+    t.className = 'tab loaded' + (k===holdingsSelectedMonth?' active':'');
+    t.textContent = k;
+    t.onclick = () => { holdingsSelectedMonth=k; renderHoldings(); };
+    tabsEl.appendChild(t);
+  });
+  const ytd = document.createElement('button');
+  ytd.className = 'tab loaded' + (holdingsSelectedMonth==='YTD'?' active':'');
+  ytd.textContent='YTD 2026'; ytd.style.marginLeft='8px';
+  ytd.onclick = () => { holdingsSelectedMonth='YTD'; renderHoldings(); };
+  tabsEl.appendChild(ytd);
+
+  // Get metrics based on sub-view
+  function getMetrics(key) {
+    if (holdingsSubView==='airbnb') {
+      const a = airbnbData[key];
+      if (!a) return null;
+      return { revenue: a.revenue||0, np: a.payouts||a.revenue||0, nights: a.nights, bookings: a.bookings };
+    }
+    if (!holdingsData[key]) return null;
+    const m = holdingsData[key].metrics;
+    return holdingsSubView==='consulting' ? m.consulting : m;
   }
 
-  document.getElementById('ratio-boxes').innerHTML = `
-    <div class="ratio-box">
-      <div class="ratio-lbl">This month</div>
-      <div class="ratio-big" style="color:${ratioColor(moCac)}">${moCac != null ? moCac.toFixed(2)+' : 1' : '—'}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:3px">GP $${Math.round((allData[thisMoKey]?.metrics?.grossProfit||0)).toLocaleString()} ÷ Mkt ${mktBreakdown(moMkt,1)}</div>
-    </div>
-    <div class="ratio-box">
-      <div class="ratio-lbl">Last 3 months</div>
-      <div class="ratio-big" style="color:${ratioColor(qtdCac)}">${qtdCac != null ? qtdCac.toFixed(2)+' : 1' : '—'}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:3px">Mkt ${mktBreakdown(qtdMkt, qtdKeys.length)}</div>
-    </div>
-    <div class="ratio-box" style="grid-column:span 2">
-      <div class="ratio-lbl">YTD 2026</div>
-      <div class="ratio-big" style="color:${ratioColor(ytdCac)}">${ytdCac != null ? ytdCac.toFixed(2)+' : 1' : '—'}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:3px">GP $${Math.round(loaded2.reduce((s,k)=>s+(allData[k]?.metrics?.grossProfit||0),0)).toLocaleString()} ÷ Mkt ${mktBreakdown(ytdMkt, loaded2.length)}</div>
-    </div>`;
+  const m = holdingsSelectedMonth==='YTD'
+    ? (holdingsSubView==='airbnb'
+        ? { revenue: airbnbLoaded.reduce((s,k)=>s+(airbnbData[k]?.revenue||0),0), np: airbnbLoaded.reduce((s,k)=>s+(airbnbData[k]?.payouts||airbnbData[k]?.revenue||0),0) }
+        : loaded.reduce((acc,k) => {
+            const src = holdingsSubView==='consulting'?holdingsData[k].metrics.consulting:holdingsData[k].metrics;
+            acc.revenue=(acc.revenue||0)+(src.revenue||0);
+            acc.np=(acc.np||0)+(src.np||0);
+            acc.grossProfit=(acc.grossProfit||0)+(src.grossProfit||0);
+            acc.totalExpenses=(acc.totalExpenses||0)+(src.totalExpenses||0);
+            return acc;
+          }, {}))
+    : getMetrics(holdingsSelectedMonth);
 
-  document.getElementById('margin-boxes').innerHTML = `
-    <div class="ratio-box">
-      <div class="ratio-lbl">Revenue</div>
-      <div class="ratio-big" style="font-size:20px">${fmt$(m.revenue)}</div>
-    </div>
-    <div class="ratio-box">
-      <div class="ratio-lbl">COGS</div>
-      <div class="ratio-big" style="font-size:20px">${fmt$(m.cogs)}</div>
-    </div>
-    <div class="ratio-box">
-      <div class="ratio-lbl">Expenses</div>
-      <div class="ratio-big" style="font-size:20px">${fmt$(m.totalExpenses)}</div>
-    </div>
-    <div class="ratio-box">
-      <div class="ratio-lbl">Net income</div>
-      <div class="ratio-big" style="font-size:20px;color:${(m.np||0)>=0?'var(--green)':'var(--red)'}">${fmt$(m.np)}</div>
-    </div>`;
-}
+  if (!m) { document.getElementById('holdings-kpis').innerHTML = '<div class="empty-state">No data for this period</div>'; return; }
 
-function renderChart() {
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  const labels = loaded;
-  const revs = loaded.map(k => allData[k].metrics.revenue || 0);
-  const gps = loaded.map(k => allData[k].metrics.grossProfit || 0);
-  const nps = loaded.map(k => allData[k].metrics.np || 0);
+  const npPct = m.revenue ? (m.np||0)/m.revenue : null;
+  const gpPct = m.revenue ? (m.grossProfit||0)/m.revenue : null;
 
-  if (revChart) revChart.destroy();
-  revChart = new Chart(document.getElementById('rev-chart'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Revenue', data: revs, backgroundColor: '#3b5af7', borderRadius: 5 },
-        { label: 'Gross profit', data: gps, backgroundColor: '#4ade80', borderRadius: 5 },
-        { label: 'Net profit', data: nps, backgroundColor: nps.map(v => v >= 0 ? '#fbbf24' : '#f87171'), borderRadius: 5 },
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: {
-          ticks: { color: '#888', callback: v => '$' + Math.round(v / 1000) + 'k' },
-          grid: { color: 'rgba(255,255,255,.05)' }
-        },
-        x: { ticks: { color: '#888' }, grid: { display: false } }
-      }
-    }
+  document.getElementById('holdings-kpis').innerHTML = holdingsSubView==='airbnb' ? [
+    { label:'Gross Revenue',  val:fmt$(m.revenue) },
+    { label:'Payouts',        val:fmt$(m.np), color:'var(--green)' },
+    { label:'Total Nights',   val:(m.nights||0)+' nights' },
+    { label:'Total Bookings', val:(m.bookings||0)+' bookings' },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('')
+  : [
+    { label:'Revenue',      val:fmt$(m.revenue) },
+    { label:'Gross Profit', val:fmt$(m.grossProfit||m.revenue) },
+    { label:'GP %',         val:fmtPct(gpPct) },
+    { label:'Expenses',     val:fmt$(m.totalExpenses||m.expenses) },
+    { label:'Net Income',   val:fmt$(m.np), color:(m.np||0)>=0?'var(--green)':'var(--red)' },
+    { label:'NP %',         val:fmtPct(npPct), color:(npPct||0)>=0?'var(--green)':'var(--red)' },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+
+  // Chart
+  const chartLabels = holdingsSubView==='airbnb' ? airbnbLoaded : loaded;
+  const revs = chartLabels.map(k => holdingsSubView==='airbnb'?(airbnbData[k]?.revenue||0):(holdingsSubView==='consulting'?holdingsData[k]?.metrics?.consulting?.revenue:holdingsData[k]?.metrics?.revenue)||0);
+  const nps  = chartLabels.map(k => holdingsSubView==='airbnb'?(airbnbData[k]?.payouts||0):(holdingsSubView==='consulting'?holdingsData[k]?.metrics?.consulting?.np:holdingsData[k]?.metrics?.np)||0);
+  if (holdingsChart) holdingsChart.destroy();
+  holdingsChart = new Chart(document.getElementById('holdings-chart'), {
+    type:'bar', data:{ labels:chartLabels, datasets:[
+      { label:'Revenue', data:revs, backgroundColor:'#3b5af7', borderRadius:4 },
+      { label:holdingsSubView==='airbnb'?'Payouts':'Net Income', data:nps, backgroundColor:nps.map(v=>v>=0?'#4ade80':'#f87171'), borderRadius:4 },
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}}, x:{ticks:{color:'#888'},grid:{display:false}} }}
   });
-}
 
-function renderPnLTable() {
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  const rows = [
-    { label: 'Revenue', key: 'revenue', bold: true },
-    { label: 'COGS (VA salaries)', key: 'cogs' },
-    { label: 'Gross profit', key: 'grossProfit', bold: true },
-    { label: '  GP %', key: 'gpPct', pct: true },
-    { label: 'Total expenses', key: 'totalExpenses' },
-    { label: 'Net income', key: 'np', bold: true },
-    { label: '  NP %', key: 'npPct', pct: true },
+  // Table
+  document.getElementById('holdings-table-title').textContent = holdingsSubView==='airbnb'?'Airbnb Monthly':holdingsSubView==='consulting'?'Consulting P&L':'Holdings P&L';
+  const tableRows = holdingsSubView==='airbnb' ? [
+    { label:'Gross earnings', key:'revenue', bold:true },
+    { label:'Payouts',        key:'payouts' },
+    { label:'Nights',         key:'nights', fmt:v=>v?Math.round(v)+'':'—' },
+    { label:'Bookings',       key:'bookings', fmt:v=>v?Math.round(v)+'':'—' },
+  ] : [
+    { label:'Revenue',      key:'revenue',      bold:true },
+    { label:'Gross profit', key:'grossProfit',  bold:true },
+    { label:'GP %',         key:'gpPct',        pct:true },
+    { label:'Expenses',     key:'totalExpenses' },
+    { label:'Net income',   key:'np',           bold:true },
+    { label:'NP %',         key:'npPct',        pct:true },
   ];
-
-  const ytd = (fn) => loaded.reduce((s, k) => s + (fn(allData[k].metrics) || 0), 0);
-  const th = `<thead><tr><th>Metric</th>${loaded.map(k => `<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
-  const tb = '<tbody>' + rows.map(r => {
-    const cls = r.bold ? 'row-bold' : r.pct ? 'row-pct' : '';
-    const get = (m) => m[r.key];
-    const cells = loaded.map(k => {
-      const v = get(allData[k].metrics);
-      const formatted = r.pct ? fmtPct(v) : fmt$(v);
-      const colorClass = !r.pct && v != null && v < 0 ? ' class="neg"' : '';
-      return `<td${colorClass}>${formatted}</td>`;
+  const src = holdingsSubView==='airbnb' ? airbnbLoaded : loaded;
+  const th2 = `<thead><tr><th>Metric</th>${src.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
+  const tb2 = '<tbody>'+tableRows.map(r=>{
+    const cls=r.bold?'row-bold':r.pct?'row-pct':'';
+    const cells = src.map(k=>{
+      const row = holdingsSubView==='airbnb'?airbnbData[k]:holdingsSubView==='consulting'?holdingsData[k]?.metrics?.consulting:holdingsData[k]?.metrics;
+      const v = row?.[r.key];
+      const formatted = r.fmt?r.fmt(v):r.pct?fmtPct(v):fmt$(v);
+      return `<td class="${!r.pct&&!r.fmt&&v<0?'neg':''}">${formatted}</td>`;
     }).join('');
-    const ytdV = r.pct ? null : ytd(m => get(m));
-    const ytdCell = r.pct ? '<td>—</td>' : `<td${ytdV < 0 ? ' class="neg"' : ''}>${fmt$(ytdV)}</td>`;
-    return `<tr class="${cls}"><td>${r.label}</td>${cells}${ytdCell}</tr>`;
-  }).join('') + '</tbody>';
-
-  document.getElementById('pnl-table').innerHTML = th + tb;
+    const ytdV = r.pct||r.fmt?null:src.reduce((s,k)=>{
+      const row=holdingsSubView==='airbnb'?airbnbData[k]:holdingsSubView==='consulting'?holdingsData[k]?.metrics?.consulting:holdingsData[k]?.metrics;
+      return s+(row?.[r.key]||0);
+    },0);
+    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td${ytdV<0?' class="neg"':''}>${ytdV!=null?fmt$(ytdV):'—'}</td></tr>`;
+  }).join('')+'</tbody>';
+  document.getElementById('holdings-table').innerHTML = th2+tb2;
 }
 
-function renderClientTable() {
-  const m = currentMetrics();
-  if (!m?.clients?.length) { document.getElementById('client-card').style.display = 'none'; return; }
-  document.getElementById('client-card').style.display = 'block';
-  document.getElementById('client-month-label').textContent = selectedMonth;
+// ── LOS GRINGOS ──────────────────────────────────────────────────
+let gringosChart = null;
+let gringosSelectedMonth = null;
 
+function renderGringos() {
+  const loaded = MONTH_ORDER.filter(k=>gringosData[k]);
+  if (!loaded.length) { document.getElementById('gringos-empty').style.display='block'; document.getElementById('gringos-content').style.display='none'; return; }
+  document.getElementById('gringos-empty').style.display='none';
+  document.getElementById('gringos-content').style.display='block';
+  if (!gringosSelectedMonth) gringosSelectedMonth = loaded[loaded.length-1];
 
-  const totalRev = m.clients.reduce((s, c) => s + (c.revenue || 0), 0);
-  const th = `<thead><tr><th style="text-align:left">Client</th><th>Revenue</th><th>% of total</th></tr></thead>`;
-  const tb = '<tbody>' + m.clients.map(c => `
-    <tr>
-      <td>${c.name}</td>
-      <td>${fmt$(c.revenue)}</td>
-      <td style="color:var(--muted)">${totalRev ? ((c.revenue/totalRev)*100).toFixed(1)+'%' : '—'}</td>
-    </tr>`).join('') + '</tbody>';
+  const tabsEl = document.getElementById('gringos-tabs');
+  tabsEl.innerHTML='';
+  loaded.forEach(k=>{
+    const t=document.createElement('button');
+    t.className='tab loaded'+(k===gringosSelectedMonth?' active':'');
+    t.textContent=k; t.onclick=()=>{gringosSelectedMonth=k;renderGringos();};
+    tabsEl.appendChild(t);
+  });
 
-  document.getElementById('client-table').innerHTML = th + tb;
+  const m = gringosData[gringosSelectedMonth].metrics;
+  document.getElementById('gringos-kpis').innerHTML=[
+    {label:'Revenue',val:fmt$(m.revenue)},
+    {label:'Gross Profit',val:fmt$(m.grossProfit),color:(m.grossProfit||0)>=0?'var(--green)':'var(--red)'},
+    {label:'GP %',val:fmtPct(m.gpPct)},
+    {label:'Expenses',val:fmt$(m.totalExpenses)},
+    {label:'Net Income',val:fmt$(m.np),color:(m.np||0)>=0?'var(--green)':'var(--red)'},
+    {label:'NP %',val:fmtPct(m.npPct),color:(m.npPct||0)>=0?'var(--green)':'var(--red)'},
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+
+  const revs=loaded.map(k=>gringosData[k].metrics.revenue||0);
+  const nps=loaded.map(k=>gringosData[k].metrics.np||0);
+  if(gringosChart)gringosChart.destroy();
+  gringosChart=new Chart(document.getElementById('gringos-chart'),{
+    type:'bar',data:{labels:loaded,datasets:[
+      {label:'Revenue',data:revs,backgroundColor:'#fbbf24',borderRadius:4},
+      {label:'NP',data:nps,backgroundColor:nps.map(v=>v>=0?'#4ade80':'#f87171'),borderRadius:4},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}},x:{ticks:{color:'#888'},grid:{display:false}}}}
+  });
+  const pnlRows=[
+    {label:'Revenue',key:'revenue',bold:true},
+    {label:'COGS',key:'cogs'},
+    {label:'Gross profit',key:'grossProfit',bold:true},
+    {label:'GP %',key:'gpPct',pct:true},
+    {label:'Expenses',key:'totalExpenses'},
+    {label:'Net income',key:'np',bold:true},
+    {label:'NP %',key:'npPct',pct:true},
+  ];
+  const th3=`<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
+  const tb3='<tbody>'+pnlRows.map(r=>{
+    const cls=r.bold?'row-bold':r.pct?'row-pct':'';
+    const cells=loaded.map(k=>{const v=gringosData[k].metrics[r.key];return `<td class="${!r.pct&&v<0?'neg':''}">${r.pct?fmtPct(v):fmt$(v)}</td>`;}).join('');
+    const ytdV=r.pct?null:loaded.reduce((s,k)=>s+(gringosData[k].metrics[r.key]||0),0);
+    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td>${r.pct?'—':fmt$(ytdV)}</td></tr>`;
+  }).join('')+'</tbody>';
+  document.getElementById('gringos-table').innerHTML=th3+tb3;
 }
 
 // ── VIEW SWITCHING ───────────────────────────────────────────────
-function switchView(view, btn) {
-  document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('dash-view').style.display = view === 'dashboard' ? 'block' : 'none';
-  document.getElementById('proj-view').style.display = view === 'projections' ? 'block' : 'none';
-  if (view === 'projections') initProj();
+function showEntity(id, btn) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.entity-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('view-'+id).classList.add('active');
+  if (btn) btn.classList.add('active');
+  else {
+    const tabs = document.querySelectorAll('.entity-tab');
+    const map = {overview:0,thl:1,holdings:2,gringos:3,personal:4};
+    if (map[id]!==undefined) tabs[map[id]]?.classList.add('active');
+  }
 }
 
-// ── PROJECTIONS ───────────────────────────────────────────────────
-let projChart = null;
-let projInputs = {};
+function switchTHLView(view, btn) {
+  document.querySelectorAll('.view-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('thl-dash-view').style.display = view==='dashboard'?'block':'none';
+  document.getElementById('thl-proj-view').style.display = view==='projections'?'block':'none';
+  if (view==='projections') initProj();
+}
+
+// ── PROJECTIONS (THL) ────────────────────────────────────────────
+let projChart=null, projInputs={};
 
 function calcDefaults() {
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  if (!loaded.length) return { activeClients: 12, avgRev: 1800, avgCogs: 1100, newClients: 3, churn: 1, fixedExp: 5500, months: 8, npTarget: 5000 };
-
-  // Pull actuals from latest month
-  const latest = allData[loaded[loaded.length-1]].metrics;
-  const clientCount = latest.clients?.length || 12;
-  const avgRev  = clientCount ? Math.round(latest.revenue / clientCount / 50) * 50 : 1800;
-  const avgCogs = clientCount ? Math.round(latest.cogs / clientCount / 50) * 50 : 1100;
-
-  // Avg fixed expenses from last 2 months
-  const recentExps = loaded.slice(-2).map(k => allData[k].metrics.totalExpenses || 0);
-  const fixedExp = Math.round(recentExps.reduce((a,b)=>a+b,0) / recentExps.length / 100) * 100;
-
-  const cogsPctOverride = clientCount ? Math.round(latest.cogs / latest.revenue * 100) : 60;
-  return { activeClients: clientCount, avgRev, avgCogs, cogsPctOverride, newClients: 3, churn: 1, fixedExp, months: 8, npTarget: 5000 };
+  const loaded=MONTH_ORDER.filter(k=>thlData[k]);
+  if (!loaded.length) return {activeClients:12,avgRev:1800,avgCogs:1100,cogsPctOverride:60,newClients:3,churn:1,fixedExp:5500,months:8,npTarget:5000};
+  const latest=thlData[loaded[loaded.length-1]].metrics;
+  const clientCount=latest.clients?.length||12;
+  const avgRev=clientCount?Math.round(latest.revenue/clientCount/50)*50:1800;
+  const cogsPctOverride=clientCount?Math.round(latest.cogs/latest.revenue*100):60;
+  const recentExps=loaded.slice(-2).map(k=>thlData[k].metrics.totalExpenses||0);
+  const fixedExp=Math.round(recentExps.reduce((a,b)=>a+b,0)/recentExps.length/100)*100;
+  return {activeClients:clientCount,avgRev,avgCogs:Math.round(latest.cogs/clientCount/50)*50,cogsPctOverride,newClients:3,churn:1,fixedExp,months:8,npTarget:5000};
 }
-
-const SCENARIOS = {
-  trend:        () => calcDefaults(),
-  conservative: () => { const d = calcDefaults(); return { ...d, newClients: Math.max(1, d.newClients-1), churn: d.churn+1, cogsPctOverride: Math.min(d.cogsPctOverride+5, 85) }; },
-  growth:       () => { const d = calcDefaults(); return { ...d, newClients: d.newClients+2, churn: Math.max(0, d.churn-1), cogsPctOverride: Math.max(d.cogsPctOverride-3, 30) }; },
+const SCENARIOS={
+  trend:()=>calcDefaults(),
+  conservative:()=>{const d=calcDefaults();return{...d,newClients:Math.max(1,d.newClients-1),churn:d.churn+1,cogsPctOverride:Math.min(d.cogsPctOverride+5,85)};},
+  growth:()=>{const d=calcDefaults();return{...d,newClients:d.newClients+2,churn:Math.max(0,d.churn-1),cogsPctOverride:Math.max(d.cogsPctOverride-3,30)};},
 };
-
-function initProj() {
-  if (projInputs._initialized) { updateProj(); return; }
-  projInputs = { ...calcDefaults(), _initialized: true };
-  syncInputsToDOM();
-  updateProj();
+function initProj(){if(projInputs._initialized){updateProj();return;}projInputs={...calcDefaults(),_initialized:true};syncInputsToDOM();updateProj();}
+function syncInputsToDOM(){const p=projInputs;setVal('p-active-clients',p.activeClients);setVal('p-avg-rev',p.avgRev);setVal('p-new-clients',p.newClients);setVal('p-churn',p.churn);setVal('p-cogs-pct',p.cogsPctOverride);setVal('p-fixed-exp',p.fixedExp);setVal('p-months',p.months);setVal('p-np-target',p.npTarget);updateLabels();}
+function setVal(id,v){const el=document.getElementById(id);if(el)el.value=v;}
+function getVal(id){return parseFloat(document.getElementById(id)?.value||0);}
+function updateLabels(){
+  document.getElementById('p-new-clients-lbl').textContent=Math.round(getVal('p-new-clients'))+' / mo';
+  document.getElementById('p-churn-lbl').textContent=Math.round(getVal('p-churn'))+' / mo';
+  document.getElementById('p-months-lbl').textContent=Math.round(getVal('p-months'))+' mo';
+  const cp=document.getElementById('p-cogs-pct-lbl');if(cp)cp.textContent=getVal('p-cogs-pct').toFixed(0)+'%';
 }
+function applyScenario(name,btn){document.querySelectorAll('.scenario-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');Object.assign(projInputs,SCENARIOS[name]());syncInputsToDOM();updateProj();}
+function resetInputs(){projInputs._initialized=false;document.querySelectorAll('.scenario-btn').forEach(b=>b.classList.remove('active'));document.querySelector('.scenario-btn').classList.add('active');initProj();}
 
-function syncInputsToDOM() {
-  const p = projInputs;
-  setVal('p-active-clients', p.activeClients);
-  setVal('p-avg-rev',        p.avgRev);
-  setVal('p-avg-cogs',       p.avgCogs);
-  setVal('p-new-clients',    p.newClients);
-  setVal('p-churn',          p.churn);
-  setVal('p-cogs-pct',       p.cogsPctOverride);
-  setVal('p-fixed-exp',      p.fixedExp);
-  setVal('p-months',         p.months);
-  setVal('p-np-target',      p.npTarget);
-  updateLabels();
-}
-function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
-function getVal(id) { return parseFloat(document.getElementById(id)?.value || 0); }
-function updateLabels() {
-  document.getElementById('p-new-clients-lbl').textContent = Math.round(getVal('p-new-clients')) + ' / mo';
-  document.getElementById('p-churn-lbl').textContent       = Math.round(getVal('p-churn')) + ' / mo';
-  document.getElementById('p-months-lbl').textContent      = Math.round(getVal('p-months')) + ' mo';
-  const cp = document.getElementById('p-cogs-pct-lbl');
-  if (cp) cp.textContent = getVal('p-cogs-pct').toFixed(0) + '%';
-}
-
-function applyScenario(name, btn) {
-  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const s = SCENARIOS[name]();
-  Object.assign(projInputs, s);
-  syncInputsToDOM();
-  updateProj();
-}
-
-function resetInputs() {
-  projInputs._initialized = false;
-  document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('.scenario-btn').classList.add('active');
-  initProj();
-}
-
-function buildProjection(overrides={}) {
-  const activeClients = overrides.activeClients ?? Math.round(getVal('p-active-clients'));
-  const avgRev        = overrides.avgRev        ?? getVal('p-avg-rev');
-  const cogsPct       = (overrides.cogsPct      ?? getVal('p-cogs-pct')) / 100;
-  const newPerMo      = overrides.newClients     ?? Math.round(getVal('p-new-clients'));
-  const churnPerMo    = overrides.churn          ?? Math.round(getVal('p-churn'));
-  const fixedExp      = overrides.fixedExp       ?? getVal('p-fixed-exp');
-  const nMonths       = Math.round(getVal('p-months'));
-  // avgCogs overridden by cogsPct slider
-  const avgCogs       = avgRev * cogsPct;
-
-  const loaded = MONTH_ORDER.filter(k => allData[k]);
-  const lastActualIdx = loaded.length ? MONTH_ORDER.indexOf(loaded[loaded.length-1]) : 3;
-
-  const rows = [];
-  // Actuals
-  loaded.forEach(k => {
-    const m = allData[k].metrics;
-    const clients = m.clients?.length || 0;
-    rows.push({ label: k, clients, revenue: m.revenue, cogs: m.cogs, grossProfit: m.grossProfit, expenses: m.totalExpenses, np: m.np, actual: true, newClients: 0, lostClients: 0 });
-  });
-
-  // Projections
-  let clients = activeClients;
-  for (let i = 0; i < nMonths; i++) {
-    const moIdx = lastActualIdx + 1 + i;
-    const label = MONTH_ORDER[moIdx] || 'Mo +' + (i+1);
-    const lost = Math.min(churnPerMo, clients);
-    clients = Math.max(0, clients - lost + newPerMo);
-    const revenue     = clients * avgRev;
-    const cogs        = clients * avgCogs;
-    const grossProfit = revenue - cogs;
-    const np          = grossProfit - fixedExp;
-    rows.push({ label, clients, revenue, cogs, grossProfit, expenses: fixedExp, np, actual: false, newClients: newPerMo, lostClients: lost });
+function buildProjection(overrides={}){
+  const activeClients=overrides.activeClients??Math.round(getVal('p-active-clients'));
+  const avgRev=overrides.avgRev??getVal('p-avg-rev');
+  const cogsPct=(overrides.cogsPct??getVal('p-cogs-pct'))/100;
+  const newPerMo=overrides.newClients??Math.round(getVal('p-new-clients'));
+  const churnPerMo=overrides.churn??Math.round(getVal('p-churn'));
+  const fixedExp=overrides.fixedExp??getVal('p-fixed-exp');
+  const nMonths=Math.round(getVal('p-months'));
+  const loaded=MONTH_ORDER.filter(k=>thlData[k]);
+  const lastIdx=loaded.length?MONTH_ORDER.indexOf(loaded[loaded.length-1]):3;
+  const rows=[];
+  loaded.forEach(k=>{const m=thlData[k].metrics;rows.push({label:k,clients:m.clients?.length||null,revenue:m.revenue,cogs:m.cogs,grossProfit:m.grossProfit,expenses:m.totalExpenses,np:m.np,actual:true,newClients:null,lostClients:null});});
+  let clients=activeClients;
+  for(let i=0;i<nMonths;i++){
+    const moIdx=lastIdx+1+i;
+    const label=MONTH_ORDER[moIdx]||'Mo +'+(i+1);
+    const lost=Math.min(churnPerMo,clients);
+    clients=Math.max(0,clients-lost+newPerMo);
+    const revenue=clients*avgRev;
+    const cogs=revenue*cogsPct;
+    const grossProfit=revenue-cogs;
+    const np=grossProfit-fixedExp;
+    rows.push({label,clients,revenue,cogs,grossProfit,expenses:fixedExp,np,actual:false,newClients:newPerMo,lostClients:lost});
   }
   return rows;
 }
 
-function updateProj() {
+function updateProj(){
   updateLabels();
-  const rows = buildProjection();
-  const npTarget   = getVal('p-np-target');
-  const projRows   = rows.filter(r => !r.actual);
-  const targetHit  = projRows.find(r => r.np >= npTarget);
-  const last       = rows[rows.length - 1];
-  const totalProjRev = projRows.reduce((s,r)=>s+r.revenue,0);
-  const totalProjNP  = projRows.reduce((s,r)=>s+r.np,0);
+  const rows=buildProjection();
+  const npTarget=getVal('p-np-target');
+  const projRows=rows.filter(r=>!r.actual);
+  const npTargetHit=projRows.find(r=>npTarget&&r.np>=npTarget);
+  const last=rows[rows.length-1];
+  const totalProjNP=projRows.reduce((s,r)=>s+r.np,0);
+  const d=calcDefaults();
+  const conservRows=buildProjection({newClients:Math.max(1,d.newClients-1),churn:d.churn+1,cogsPct:Math.min(d.cogsPctOverride+5,85)});
+  const growthRows=buildProjection({newClients:d.newClients+2,churn:Math.max(0,d.churn-1),cogsPct:Math.max(d.cogsPctOverride-3,30)});
 
-  document.getElementById('proj-kpis').innerHTML = [
-    { label: 'Clients at end',         val: last.clients + ' clients' },
-    { label: 'Projected MRR (end)',    val: fmt$(last.revenue) },
-    { label: 'Projected ARR (end)',    val: fmt$(last.revenue * 12) },
-    { label: 'Projected GP % (end)',   val: fmtPct((last.grossProfit||0)/(last.revenue||1)) },
-    { label: 'Projected NP (end mo)', val: fmt$(last.np), color: last.np>=0?'var(--green)':'var(--red)' },
-    { label: 'Total proj net income', val: fmt$(totalProjNP), color: totalProjNP>=0?'var(--green)':'var(--red)' },
-    { label: npTarget?'NP target hit':'Set NP target', val: npTarget?(targetHit?targetHit.label:'Not in range'):'—', color: targetHit?'var(--green)':'var(--amber)' },
+  document.getElementById('proj-kpis').innerHTML=[
+    {label:'Clients at end',val:last.clients+' clients'},
+    {label:'MRR at end',val:fmt$(last.revenue)},
+    {label:'ARR at end',val:fmt$(last.revenue*12)},
+    {label:'GP % at end',val:fmtPct((last.grossProfit||0)/(last.revenue||1))},
+    {label:'NP at end month',val:fmt$(last.np),color:last.np>=0?'var(--green)':'var(--red)'},
+    {label:'Total proj NP',val:fmt$(totalProjNP),color:totalProjNP>=0?'var(--green)':'var(--red)'},
+    {label:npTarget?'Hit $'+Math.round(npTarget/1000)+'k/mo':'NP target',val:npTarget?(npTargetHit?npTargetHit.label:'Not in range'):'Set above',color:npTargetHit?'var(--green)':'var(--amber)'},
   ].map(k=>'<div class="kpi"><div class="kpi-label">'+k.label+'</div><div class="kpi-val" style="font-size:18px;'+(k.color?'color:'+k.color:'')+'">'+k.val+'</div></div>').join('');
 
-  // Build 3 scenario projections for the chart
-  const d = calcDefaults();
-  const conservRows = buildProjection({ newClients: Math.max(1,d.newClients-1), churn: d.churn+1, cogsPct: Math.min(d.cogsPctOverride+5,85) });
-  const growthRows  = buildProjection({ newClients: d.newClients+2, churn: Math.max(0,d.churn-1), cogsPct: Math.max(d.cogsPctOverride-3,30) });
-  // All share same labels (actuals + projected months)
-  const labels = rows.map(r=>r.label);
-
-  if (projChart) projChart.destroy();
-  projChart = new Chart(document.getElementById('proj-chart'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        // Actuals — solid bars via bar type override
-        {
-          label:'Net income (actual)', type:'bar',
-          data: rows.map(r=>r.actual?r.np:null),
-          backgroundColor: rows.map(r=>r.np>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.4)'),
-          borderRadius:4, order:4
-        },
-        // Revenue actual line
-        {
-          label:'Revenue (actual)', type:'bar',
-          data: rows.map(r=>r.actual?r.revenue:null),
-          backgroundColor:'rgba(91,114,247,.25)', borderRadius:4, order:5
-        },
-        // Conservative NP line
-        {
-          label:'Conservative NP', data: conservRows.map(r=>r.actual?null:r.np),
-          borderColor:'#f87171', backgroundColor:'transparent',
-          borderWidth:2, borderDash:[5,4], pointRadius:3, pointBackgroundColor:'#f87171',
-          tension:0.3, order:3
-        },
-        // Trend NP line
-        {
-          label:'Trend NP', data: rows.map(r=>r.actual?null:r.np),
-          borderColor:'#fbbf24', backgroundColor:'transparent',
-          borderWidth:2.5, pointRadius:4, pointBackgroundColor:'#fbbf24',
-          tension:0.3, order:2
-        },
-        // Growth NP line
-        {
-          label:'Growth NP', data: growthRows.map(r=>r.actual?null:r.np),
-          borderColor:'#4ade80', backgroundColor:'transparent',
-          borderWidth:2, borderDash:[3,2], pointRadius:3, pointBackgroundColor:'#4ade80',
-          tension:0.3, order:1
-        },
-        // Trend Revenue line
-        {
-          label:'Trend Revenue', data: rows.map(r=>r.actual?null:r.revenue),
-          borderColor:'rgba(91,114,247,.7)', backgroundColor:'transparent',
-          borderWidth:1.5, borderDash:[4,3], pointRadius:2,
-          tension:0.3, order:6
-        },
-      ]
-    },
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{
-          display:true, position:'bottom',
-          labels:{ color:'#888', boxWidth:12, font:{size:11}, padding:14 }
-        }
-      },
-      scales:{
-        y:{ ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'}, grid:{color:'rgba(255,255,255,.05)'} },
-        x:{ ticks:{color:'#888',maxRotation:45}, grid:{display:false} }
-      }
-    }
+  if(projChart)projChart.destroy();
+  projChart=new Chart(document.getElementById('proj-chart'),{
+    type:'line',
+    data:{labels:rows.map(r=>r.label),datasets:[
+      {label:'Revenue (actual)',type:'bar',data:rows.map(r=>r.actual?r.revenue:null),backgroundColor:'rgba(91,114,247,.25)',borderRadius:4,order:5},
+      {label:'NP (actual)',type:'bar',data:rows.map(r=>r.actual?r.np:null),backgroundColor:rows.map(r=>r.np>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.4)'),borderRadius:4,order:4},
+      {label:'Conservative NP',data:conservRows.map(r=>r.actual?null:r.np),borderColor:'#f87171',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:3,pointBackgroundColor:'#f87171',tension:.3,order:3},
+      {label:'Trend NP',data:rows.map(r=>r.actual?null:r.np),borderColor:'#fbbf24',backgroundColor:'transparent',borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#fbbf24',tension:.3,order:2},
+      {label:'Growth NP',data:growthRows.map(r=>r.actual?null:r.np),borderColor:'#4ade80',backgroundColor:'transparent',borderWidth:2,borderDash:[3,2],pointRadius:3,pointBackgroundColor:'#4ade80',tension:.3,order:1},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom',labels:{color:'#888',boxWidth:12,font:{size:11},padding:14}}},
+      scales:{y:{ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}},x:{ticks:{color:'#888',maxRotation:45},grid:{display:false}}}}
   });
 
-  const tableRows = [
-    { label:'Active clients', key:'clients',      bold:true,  fmt:v=>Math.round(v)+'' },
-    { label:'  + New',        key:'newClients',               fmt:v=>v?'+'+Math.round(v):'—' },
-    { label:'  − Lost',       key:'lostClients',              fmt:v=>v?'−'+Math.round(v):'—', neg:true },
-    { label:'Revenue',        key:'revenue',      bold:true,  fmt:fmt$ },
-    { label:'COGS',           key:'cogs',                     fmt:fmt$ },
-    { label:'Gross profit',   key:'grossProfit',  bold:true,  fmt:fmt$ },
-    { label:'GP %',           key:'_gpPct',       pct:true },
-    { label:'Expenses',       key:'expenses',                 fmt:fmt$ },
-    { label:'Net income',     key:'np',           bold:true,  fmt:fmt$ },
-    { label:'NP %',           key:'_npPct',       pct:true },
+  const tableRows=[
+    {label:'Active clients',key:'clients',bold:true,fmt:v=>v==null?'—':Math.round(v)+''},
+    {label:'  + New',key:'newClients',fmt:v=>v==null?'—':'+'+Math.round(v)},
+    {label:'  − Lost',key:'lostClients',fmt:v=>v==null?'—':'−'+Math.round(v),neg:true},
+    {label:'Revenue',key:'revenue',bold:true},
+    {label:'COGS',key:'cogs'},
+    {label:'Gross profit',key:'grossProfit',bold:true},
+    {label:'GP %',pct:true,fn:r=>r.grossProfit/(r.revenue||1)},
+    {label:'Expenses',key:'expenses'},
+    {label:'Net income',key:'np',bold:true},
+    {label:'NP %',pct:true,fn:r=>r.np/(r.revenue||1)},
   ];
-
-  const th = '<thead><tr><th>Metric</th>'+rows.map(r=>'<th style="color:'+(r.actual?'#888':'var(--accent)')+'">'+r.label+'</th>').join('')+'</tr></thead>';
-  const tb = '<tbody>'+tableRows.map(tr=>{
-    const cls = tr.bold?'proj-bold':'';
-    const cells = rows.map(r=>{
-      let v, formatted;
-      if (tr.key==='_gpPct') { v=r.grossProfit/(r.revenue||1); formatted=fmtPct(v); }
-      else if (tr.key==='_npPct') { v=r.np/(r.revenue||1); formatted=fmtPct(v); }
-      else { v=r[tr.key]; formatted=(tr.fmt||fmt$)(v); }
-      let colorCls = r.actual?'actual':'projected';
-      if (tr.key==='np'||tr.key==='_npPct') colorCls = v>=0?'proj-pos':'proj-neg';
-      if (tr.neg) colorCls = 'proj-neg';
-      return '<td class="'+colorCls+'">'+formatted+'</td>';
+  const th4='<thead><tr><th>Metric</th>'+rows.map(r=>'<th style="color:'+(r.actual?'#888':'var(--accent)')+'">'+r.label+'</th>').join('')+'</tr></thead>';
+  const tb4='<tbody>'+tableRows.map(tr=>{
+    const cls=tr.bold?'proj-bold':'';
+    const cells=rows.map(r=>{
+      let v,formatted;
+      if(tr.pct){v=tr.fn(r);formatted=fmtPct(v);}
+      else{v=r[tr.key];formatted=(tr.fmt||fmt$)(v);}
+      let cc=r.actual?'actual':'projected';
+      if(tr.key==='np'||tr.pct&&tr.label.includes('NP'))cc=v>=0?'proj-pos':'proj-neg';
+      if(tr.neg)cc='proj-neg';
+      return '<td class="'+cc+'">'+formatted+'</td>';
     }).join('');
     return '<tr class="'+cls+'"><td>'+tr.label+'</td>'+cells+'</tr>';
   }).join('')+'</tbody>';
-  document.getElementById('proj-table').innerHTML = th + tb;
+  document.getElementById('proj-table').innerHTML=th4+tb4;
 }
 
 // ── UTILS ────────────────────────────────────────────────────────
-function showLoading(msg) {
-  document.getElementById('loading-msg').textContent = msg;
-  document.getElementById('loading').style.display = 'flex';
-}
-function setLoadingMsg(msg) { document.getElementById('loading-msg').textContent = msg; }
-function hideLoading() { document.getElementById('loading').style.display = 'none'; }
-function showError(msg) {
-  const el = document.getElementById('error-banner');
-  el.textContent = '⚠ ' + msg;
-  el.style.display = 'block';
-  setTimeout(() => el.style.display = 'none', 8000);
-}
+function showLoading(msg){document.getElementById('loading-msg').textContent=msg;document.getElementById('loading').style.display='flex';}
+function setLoadingMsg(msg){document.getElementById('loading-msg').textContent=msg;}
+function hideLoading(){document.getElementById('loading').style.display='none';}
+function showError(msg){const el=document.getElementById('error-banner');if(!el)return;el.textContent='⚠ '+msg;el.style.display='block';setTimeout(()=>el.style.display='none',8000);}
 </script>
-
-<!-- Google Identity Services — load last -->
 <script src="https://accounts.google.com/gsi/client" onload="initGoogle()" async defer></script>
 </body>
 </html>
