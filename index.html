@@ -6,6 +6,7 @@
 <title>Cody's Financial Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/build/pdf.min.js"></script>
 <style>
 :root {
   --bg:#0f0f13;--bg2:#17171e;--bg3:#1e1e28;--border:rgba(255,255,255,0.08);
@@ -363,10 +364,40 @@ td.pos{color:var(--green)}td.neg{color:var(--red)}
   <!-- PERSONAL -->
   <div id="view-personal" class="view">
     <div style="padding:1.5rem;max-width:1200px;margin:0 auto">
-      <div class="empty-state">
-        <p style="font-size:24px;margin-bottom:.5rem">👤</p>
-        <p>Personal accounts coming soon</p>
-        <p style="margin-top:.5rem;font-size:12px">Add bank statements to the <strong>Personal Accounts</strong> folder in Drive</p>
+      <div class="empty-state" id="personal-empty">
+        <p style="font-size:24px;margin-bottom:.5rem">🏦</p>
+        <p>Loading Relay account data...</p>
+        <p style="margin-top:.5rem;font-size:12px">Add monthly Relay PDFs to the <strong>Personal Accounts</strong> folder in Drive</p>
+      </div>
+      <div id="personal-content" style="display:none">
+        <div class="period-bar"><span>Period:</span><div id="personal-tabs"></div></div>
+        <div class="overview-kpis" id="personal-kpis"></div>
+        <div class="two-col">
+          <div class="chart-card" style="margin-bottom:0">
+            <div class="chart-header">
+              <div class="card-title" style="margin:0">Income breakdown</div>
+              <div class="chart-legend">
+                <span><span class="legend-dot" style="background:#4ade80"></span>Airbnb</span>
+                <span><span class="legend-dot" style="background:#7c6ef7"></span>Consulting</span>
+              </div>
+            </div>
+            <div class="chart-wrap"><canvas id="personal-income-chart"></canvas></div>
+          </div>
+          <div class="chart-card" style="margin-bottom:0">
+            <div class="chart-header">
+              <div class="card-title" style="margin:0">Account balance</div>
+            </div>
+            <div class="chart-wrap"><canvas id="personal-balance-chart"></canvas></div>
+          </div>
+        </div>
+        <div class="table-card" style="margin-top:1rem">
+          <div class="card-title">Monthly Relay statement summary</div>
+          <table id="personal-table"></table>
+        </div>
+        <div class="table-card">
+          <div class="card-title">Transaction breakdown — <span id="personal-month-lbl"></span></div>
+          <div class="overview-kpis" id="personal-cats" style="margin-bottom:0"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -386,6 +417,7 @@ const thlData = {};      // key -> {metrics}
 const holdingsData = {}; // key -> {metrics, consulting, airbnb}
 const airbnbData = {};   // key -> {revenue, payouts, nights, bookings}
 const gringosData = {};  // key -> {metrics}
+const personalData = {}; // key -> relay metrics
 
 // ── GOOGLE AUTH ──────────────────────────────────────────────────
 function initGoogle() {
@@ -579,6 +611,142 @@ function parseAirbnbCSV(csvText) {
   return byMonth;
 }
 
+// ── RELAY PDF PARSER ────────────────────────────────────────────
+let pdfJsReady = false;
+function ensurePdfJs() {
+  if (pdfJsReady) return;
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.4.120/build/pdf.worker.min.js';
+    pdfJsReady = true;
+  }
+}
+
+async function parseRelayPDF(arrayBuffer) {
+  ensurePdfJs();
+  if (!window.pdfjsLib) return null;
+  try {
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let allText = '';
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      // Join items preserving spacing
+      const pageText = content.items.map(i => i.str).join(' ');
+      allText += ' ' + pageText;
+    }
+    return extractRelayMetrics(allText);
+  } catch(e) {
+    console.error('PDF parse error:', e);
+    return null;
+  }
+}
+
+function extractRelayMetrics(text) {
+  const m = { airbnb: 0, gusto: 0, otherDeposits: 0, deposits: 0, withdrawals: 0, openBal: 0, closeBal: 0 };
+
+  // Extract SUMMARY numbers — pattern: "Opening Balance $X Closing Balance $X Deposits $X Withdrawals $X"
+  const dollarVals = [];
+  const summaryMatch = text.match(/Opening Balance.*?Closing Balance.*?Deposits.*?Withdrawals/i);
+  if (summaryMatch) {
+    const nums = text.slice(text.search(/Opening Balance/i), text.search(/Withdrawals/i) + 200)
+      .match(/\$?([\d,]+\.\d{2})/g) || [];
+    nums.forEach((n, i) => {
+      const v = parseFloat(n.replace(/[$,]/g,''));
+      if (i === 0) m.openBal = v;
+      else if (i === 1) m.closeBal = v;
+      else if (i === 2) m.deposits = v;
+      else if (i === 3) m.withdrawals = v;
+    });
+  }
+
+  // Sum AIRBNB PAYMENTS — always credits
+  const airbnbRe = /AIRBNB PAYMENTS\s+ACH\s+\S+\s+\d+,\s+\d{4}\s+Settled\s+\+?\$?([\d,]+\.\d{2})/gi;
+  let am;
+  while ((am = airbnbRe.exec(text)) !== null) {
+    m.airbnb += parseFloat(am[1].replace(/,/g,''));
+  }
+  // Fallback: simpler pattern
+  if (m.airbnb === 0) {
+    const re2 = /AIRBNB PAYMENTS[\s\S]{1,50}?\$\+?([\d,]+\.\d{2})\s+\$[\d,]+\.\d{2}/g;
+    while ((am = re2.exec(text)) !== null) {
+      m.airbnb += parseFloat(am[1].replace(/,/g,''));
+    }
+  }
+
+  // Sum GUSTO ACH income (large positive amounts — consulting fees, not payroll pulls)
+  // Pattern: GUSTO followed by ACH (not Pull) — these are income deposits
+  const gustoRe = /GUSTO\s+ACH(?!\s+Pull)\s+\S+\s+\d+,\s+\d{4}\s+Settled\s+\+?\$?([\d,]+\.\d{2})/gi;
+  while ((am = gustoRe.exec(text)) !== null) {
+    const v = parseFloat(am[1].replace(/,/g,''));
+    if (v > 100) m.gusto += v; // Only count significant amounts as income
+  }
+  // Fallback for Gusto income
+  if (m.gusto === 0) {
+    const re3 = /GUSTO\s+ACH(?!\s*Pull)[\s\S]{1,60}?\$([\d,]+\.\d{2})\s+\$[\d,]+/g;
+    while ((am = re3.exec(text)) !== null) {
+      const v = parseFloat(am[1].replace(/,/g,''));
+      if (v > 500) m.gusto += v;
+    }
+  }
+
+  m.otherDeposits = Math.max(0, m.deposits - m.airbnb - m.gusto);
+  return m;
+}
+
+function monthKeyFromRelayFilename(name) {
+  // Pattern: "Relay 2026-01-01 #1232.pdf" or "Relay (Partial) 2026-06-01 #1232.pdf"
+  const match = name.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const year = match[1]; const month = parseInt(match[2]);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const mo = months[month-1];
+  return mo ? mo + ' ' + year.slice(2) : null;
+}
+
+// ── HOLDINGS SIMPLE P&L PARSER ───────────────────────────────────
+function parseHoldingsSimple(rows) {
+  const m = { expenses: {}, clients: [] };
+
+  // Extract month key from date range in row 2
+  const dateStr = String(rows[2]?.[0] || '').toLowerCase();
+  const monthMap = {january:'Jan 26',february:'Feb 26',march:'Mar 26',april:'Apr 26',
+    may:'May 26',june:'Jun 26',july:'Jul 26',august:'Aug 26',
+    september:'Sep 26',october:'Oct 26',november:'Nov 26',december:'Dec 26'};
+  for (const [name, key] of Object.entries(monthMap)) {
+    if (dateStr.includes(name)) { m._monthKey = key; break; }
+  }
+
+  for (const row of rows) {
+    const lbl = String(row[0] || '').trim();
+    const val = typeof row[1] === 'number' ? row[1] : null;
+    if (!lbl || val === null) continue;
+
+    if (/^total for income/i.test(lbl) || /^sales$/i.test(lbl)) {
+      if (/^total/i.test(lbl)) m.revenue = val; else if (!m.revenue) m.revenue = val;
+    }
+    if (/^gross profit$/i.test(lbl))  m.grossProfit = val;
+    if (/^total for cost of goods sold/i.test(lbl)) m.cogs = val;
+    if (/^total for expenses/i.test(lbl) && !/sub/i.test(lbl)) m.totalExpenses = val;
+    if (/^net income$/i.test(lbl))    m.np = val;
+    if (/^contract labor/i.test(lbl)) m.consultingFees = val;
+    if (/^cleaning/i.test(lbl))       m.airbnbCleaning = val;
+    if (/^utilities/i.test(lbl))      m.utilities = val;
+    if (/^advertising/i.test(lbl))    m.marketing = val;
+    if (/^meals/i.test(lbl))          m.meals = val;
+    if (/^travel/i.test(lbl))         m.travel = val;
+  }
+
+  if (!m.grossProfit && m.revenue != null && m.cogs != null) m.grossProfit = m.revenue - m.cogs;
+  if (!m.totalExpenses && m.grossProfit != null && m.np != null) m.totalExpenses = m.grossProfit - m.np;
+  if (m.revenue) {
+    m.mrr = m.revenue; m.arr = m.revenue * 12;
+    m.gpPct = m.grossProfit / m.revenue;
+    m.npPct = m.np / m.revenue;
+  }
+  m.overhead = m.totalExpenses;
+  return m;
+}
+
 // ── LOAD ALL ─────────────────────────────────────────────────────
 async function loadAll() {
   if (!accessToken) { tokenClient.requestAccessToken({ prompt:'' }); return; }
@@ -654,6 +822,22 @@ async function loadAll() {
 
     hideLoading();
     document.getElementById('last-refresh').textContent = 'Refreshed ' + new Date().toLocaleTimeString();
+    // Personal Accounts (Relay PDFs)
+    setLoadingMsg('Loading Relay account statements...');
+    const personalFolderId = await findFolder('Personal Accounts', rootId);
+    if (personalFolderId) {
+      ensurePdfJs();
+      const pdfFiles = await listFiles(personalFolderId, ['application/pdf']);
+      for (const file of pdfFiles) {
+        const key = monthKeyFromRelayFilename(file.name);
+        if (!key) continue;
+        setLoadingMsg(`Parsing Relay ${file.name}...`);
+        const buf = await downloadFile(file.id);
+        const metrics = await parseRelayPDF(buf);
+        if (metrics) personalData[key] = { metrics, fileName: file.name };
+      }
+    }
+
     renderAll();
   } catch(e) {
     hideLoading();
@@ -668,6 +852,7 @@ function renderAll() {
   renderTHL();
   renderHoldings();
   renderGringos();
+  renderPersonal();
 }
 
 // ── FORMAT HELPERS ───────────────────────────────────────────────
@@ -1199,6 +1384,140 @@ function updateProj(){
     return '<tr class="'+cls+'"><td>'+tr.label+'</td>'+cells+'</tr>';
   }).join('')+'</tbody>';
   document.getElementById('proj-table').innerHTML=th4+tb4;
+}
+
+
+// ── PERSONAL (RELAY) ─────────────────────────────────────────────
+let personalChart1 = null, personalChart2 = null;
+let personalSelectedMonth = null;
+
+function renderPersonal() {
+  const loaded = MONTH_ORDER.filter(k => personalData[k]);
+  const emptyEl = document.getElementById('personal-empty');
+  const contentEl = document.getElementById('personal-content');
+
+  if (!loaded.length) {
+    if (emptyEl) emptyEl.style.display = 'block';
+    if (contentEl) contentEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (contentEl) contentEl.style.display = 'block';
+
+  if (!personalSelectedMonth || !personalData[personalSelectedMonth]) {
+    personalSelectedMonth = loaded[loaded.length - 1];
+  }
+
+  // Tabs
+  const tabsEl = document.getElementById('personal-tabs');
+  tabsEl.innerHTML = '';
+  loaded.forEach(k => {
+    const t = document.createElement('button');
+    t.className = 'tab loaded' + (k === personalSelectedMonth ? ' active' : '');
+    t.textContent = k;
+    t.onclick = () => { personalSelectedMonth = k; renderPersonal(); };
+    tabsEl.appendChild(t);
+  });
+  // YTD tab
+  const ytd = document.createElement('button');
+  ytd.className = 'tab loaded' + (personalSelectedMonth === 'YTD' ? ' active' : '');
+  ytd.textContent = 'YTD 2026'; ytd.style.marginLeft = '8px';
+  ytd.onclick = () => { personalSelectedMonth = 'YTD'; renderPersonal(); };
+  tabsEl.appendChild(ytd);
+
+  // Get metrics for selected period
+  function getM(k) { return personalData[k]?.metrics || {}; }
+  const isYTD = personalSelectedMonth === 'YTD';
+  const m = isYTD
+    ? { airbnb:   loaded.reduce((s,k)=>s+(getM(k).airbnb||0),0),
+        gusto:    loaded.reduce((s,k)=>s+(getM(k).gusto||0),0),
+        deposits: loaded.reduce((s,k)=>s+(getM(k).deposits||0),0),
+        withdrawals: loaded.reduce((s,k)=>s+(getM(k).withdrawals||0),0),
+        openBal:  getM(loaded[0]).openBal,
+        closeBal: getM(loaded[loaded.length-1]).closeBal,
+        otherDeposits: loaded.reduce((s,k)=>s+(getM(k).otherDeposits||0),0) }
+    : getM(personalSelectedMonth);
+
+  const netCF = (m.deposits||0) - (m.withdrawals||0);
+  const totalIncome = (m.airbnb||0) + (m.gusto||0);
+
+  // KPIs
+  document.getElementById('personal-kpis').innerHTML = [
+    { label: 'Airbnb income',     val: fmt$(m.airbnb),      color: 'var(--green)' },
+    { label: 'Consulting (Gusto)',val: fmt$(m.gusto),        color: 'var(--accent)' },
+    { label: 'Total deposits',    val: fmt$(m.deposits) },
+    { label: 'Total withdrawals', val: fmt$(m.withdrawals),  color: 'var(--red)' },
+    { label: 'Net cash flow',     val: fmt$(netCF),          color: netCF >= 0 ? 'var(--green)' : 'var(--red)' },
+    { label: 'Closing balance',   val: fmt$(m.closeBal) },
+  ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+
+  // Income breakdown chart
+  const airbnbVals  = loaded.map(k => getM(k).airbnb || 0);
+  const gustoVals   = loaded.map(k => getM(k).gusto  || 0);
+  if (personalChart1) personalChart1.destroy();
+  personalChart1 = new Chart(document.getElementById('personal-income-chart'), {
+    type: 'bar',
+    data: { labels: loaded, datasets: [
+      { label: 'Airbnb',     data: airbnbVals, backgroundColor: '#4ade80', borderRadius: 4 },
+      { label: 'Consulting', data: gustoVals,  backgroundColor: '#7c6ef7', borderRadius: 4 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { stacked: true, ticks:{color:'#888'}, grid:{display:false} },
+                y: { stacked: true, ticks:{color:'#888', callback:v=>'$'+Math.round(v/1000)+'k'}, grid:{color:'rgba(255,255,255,.05)'} } } }
+  });
+
+  // Balance trend chart
+  const balances = loaded.map(k => getM(k).closeBal || 0);
+  if (personalChart2) personalChart2.destroy();
+  personalChart2 = new Chart(document.getElementById('personal-balance-chart'), {
+    type: 'line',
+    data: { labels: loaded, datasets: [
+      { label: 'Balance', data: balances, borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,.1)',
+        borderWidth: 2.5, pointRadius: 5, pointBackgroundColor: '#fbbf24', tension: 0.3, fill: true }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks:{color:'#888'}, grid:{display:false} },
+                y: { ticks:{color:'#888', callback:v=>'$'+Math.round(v/1000)+'k'}, grid:{color:'rgba(255,255,255,.05)'} } } }
+  });
+
+  // Monthly summary table
+  const tableRows = [
+    { label:'Opening balance', key:'openBal',     bold:true },
+    { label:'Total deposits',  key:'deposits' },
+    { label:'  Airbnb income', key:'airbnb' },
+    { label:'  Consulting',    key:'gusto' },
+    { label:'  Other',         key:'otherDeposits' },
+    { label:'Total withdrawals',key:'withdrawals' },
+    { label:'Net cash flow',   key:'_net',         bold:true },
+    { label:'Closing balance', key:'closeBal',     bold:true },
+  ];
+  const th = `<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD / Total</th></tr></thead>`;
+  const tb = '<tbody>' + tableRows.map(tr => {
+    const cls = tr.bold ? 'row-bold' : tr.label.startsWith('  ') ? 'row-pct' : '';
+    const cells = loaded.map(k => {
+      const d = getM(k);
+      const v = tr.key === '_net' ? (d.deposits||0) - (d.withdrawals||0) : d[tr.key];
+      return `<td class="${v < 0 ? 'neg' : ''}">${fmt$(v)}</td>`;
+    }).join('');
+    const ytdV = tr.key === 'openBal' ? getM(loaded[0]).openBal :
+                 tr.key === 'closeBal' ? getM(loaded[loaded.length-1]).closeBal :
+                 tr.key === '_net' ? loaded.reduce((s,k)=>{const d=getM(k);return s+(d.deposits||0)-(d.withdrawals||0);},0) :
+                 loaded.reduce((s,k)=>s+(getM(k)[tr.key]||0),0);
+    return `<tr class="${cls}"><td>${tr.label.trim()}</td>${cells}<td class="${ytdV<0?'neg':''}">${fmt$(ytdV)}</td></tr>`;
+  }).join('') + '</tbody>';
+  document.getElementById('personal-table').innerHTML = th + tb;
+
+  // Transaction categories for selected month
+  document.getElementById('personal-month-lbl').textContent = isYTD ? 'YTD 2026' : personalSelectedMonth;
+  document.getElementById('personal-cats').innerHTML = [
+    { label:'Airbnb income',  val:fmt$(m.airbnb),     color:'var(--green)' },
+    { label:'Consulting',     val:fmt$(m.gusto),      color:'var(--accent)' },
+    { label:'Other deposits', val:fmt$(m.otherDeposits||0) },
+    { label:'Withdrawals',    val:fmt$(m.withdrawals), color:'var(--red)' },
+    { label:'Net',            val:fmt$(netCF),        color:netCF>=0?'var(--green)':'var(--red)' },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="font-size:18px;${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
 }
 
 // ── UTILS ────────────────────────────────────────────────────────
