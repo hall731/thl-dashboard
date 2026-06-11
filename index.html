@@ -1192,10 +1192,10 @@ function renderHoldings() {
   const airbnbLoaded = MONTH_ORDER.filter(k=>airbnbData[k]);
   const allLoaded = [...new Set([...loaded, ...airbnbLoaded])].sort((a,b)=>MONTH_ORDER.indexOf(a)-MONTH_ORDER.indexOf(b));
 
-  if (!allLoaded.length) {
-    const dbg = (window._holdingsDebug || []).join('\n');
-    document.getElementById('holdings-kpis').innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:left;font-size:11px;font-family:monospace;white-space:pre-wrap;color:#f87171">${dbg || 'No Holdings data and no debug info'}</div>`;
-    return;
+  // Show debug info in KPIs section when Holdings P&L specifically is empty
+  if (!loaded.length) {
+    const dbg = (window._holdingsDebug || ['No debug info collected — code may not have run']).join('\n');
+    document.getElementById('holdings-kpis').innerHTML = `<div style="grid-column:1/-1;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:1rem;font-size:11px;font-family:monospace;white-space:pre-wrap;color:#f87171;line-height:1.6">HOLDINGS DEBUG:\n${dbg}</div>`;
   }
   if (!holdingsSelectedMonth) holdingsSelectedMonth = allLoaded[allLoaded.length-1];
 
