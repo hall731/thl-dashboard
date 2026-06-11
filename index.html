@@ -1305,7 +1305,7 @@ let thlChart = null;
 function renderTHL() {
   const loaded = MONTH_ORDER.filter(k => thlData[k]);
   if (!loaded.length) return;
-  if (!thlSelectedMonth || !thlData[thlSelectedMonth]) thlSelectedMonth = loaded[loaded.length-1];
+  if (!thlSelectedMonth || (thlSelectedMonth !== 'YTD' && !thlData[thlSelectedMonth])) thlSelectedMonth = loaded[loaded.length-1];
 
   // Tabs
   const tabsEl = document.getElementById('thl-tabs');
@@ -1791,7 +1791,7 @@ function renderPersonal() {
   }
   if (emptyEl) emptyEl.style.display='none';
   if (contentEl) contentEl.style.display='block';
-  if (!personalSelectedMonth || !personalData[personalSelectedMonth]) personalSelectedMonth = loaded[loaded.length-1];
+  if (!personalSelectedMonth || (personalSelectedMonth !== 'YTD' && !personalData[personalSelectedMonth])) personalSelectedMonth = loaded[loaded.length-1];
 
   // Tabs
   const tabsEl = document.getElementById('personal-tabs');
