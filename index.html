@@ -895,10 +895,11 @@ async function loadAll() {
     const holdFolderId = await findFolder('Codys Holding', rootId);
     window._holdingsDebug = [`Folder: ${holdFolderId ? 'FOUND ('+holdFolderId+')' : 'NOT FOUND'}`];
     if (holdFolderId) {
-      const XLSX_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.google-apps.spreadsheet','application/vnd.ms-excel'];
       const xlsxFiles = await listSpreadsheets(holdFolderId);
+      // Process xlsx files first, then Google Sheets (skip GS if xlsx already loaded for that month)
+      const xlsxFirst = [...xlsxFiles.filter(f=>f.mimeType!=='application/vnd.google-apps.spreadsheet'), ...xlsxFiles.filter(f=>f.mimeType==='application/vnd.google-apps.spreadsheet')];
       window._holdingsDebug.push(`Files found: ${xlsxFiles.length} (${xlsxFiles.map(f=>f.name.slice(0,20)+'/'+f.mimeType.split('/').pop()).join(', ')})`);
-      for (const file of xlsxFiles) {
+      for (const file of xlsxFirst) {
         setLoadingMsg(`Parsing Holdings ${file.name}...`);
         try {
           const buf = await downloadXlsx(file.id, file.mimeType);
@@ -909,6 +910,7 @@ async function loadAll() {
           const metrics = parseHoldingsSimple(rows);
           const key = metrics._monthKey;
           window._holdingsDebug.push(`${file.name.slice(0,20)}: row2="${row2val}" key=${key||'NULL'} rev=${metrics.revenue||'none'}`);
+          if (key && holdingsData[key] && file.mimeType==='application/vnd.google-apps.spreadsheet') continue; // skip GS duplicate
           if (key) holdingsData[key] = { metrics, fileName: file.name };
         } catch(e) {
           window._holdingsDebug.push(`ERROR ${file.name.slice(0,20)}: ${e.message}`);
