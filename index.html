@@ -523,6 +523,130 @@ function lastNum(row) {
   return null;
 }
 
+// ── ANNUAL P&L PARSER (months as columns) ────────────────────────
+// Handles QB "Profit & Loss Detail" or "Profit & Loss" exports
+// where the header row has month names as column headers.
+// Returns { 'Jan 26': metrics, 'Feb 26': metrics, ... }
+function parsePnLAnnual(rows) {
+  // Step 1: Find the header row — the one that contains month names
+  const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  let headerRowIdx = -1;
+  let monthCols = []; // [{colIdx, key}]
+
+  for (let r = 0; r < Math.min(15, rows.length); r++) {
+    const row = rows[r] || [];
+    const found = [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').trim().toLowerCase();
+      // Match patterns like "jan 2026", "january 2026", "jan-26", "jan '26"
+      const mo = MONTH_NAMES.find(m => cell.startsWith(m));
+      if (mo) {
+        // Extract year — look for 2-4 digit year
+        const yearMatch = cell.match(/(?:20)?(\d{2})\b/);
+        const yr = yearMatch ? yearMatch[1] : '26';
+        const key = mo.charAt(0).toUpperCase() + mo.slice(1) + ' ' + yr;
+        if (MONTH_ORDER.includes(key)) found.push({ colIdx: c, key });
+      }
+    }
+    if (found.length >= 2) { // At least 2 month columns = this is the header row
+      headerRowIdx = r;
+      monthCols = found;
+      break;
+    }
+  }
+
+  // If no multi-column month header found, fall back to single-month detail parser
+  if (headerRowIdx === -1 || monthCols.length === 0) {
+    return null; // signal to caller to try parsePnLDetail
+  }
+
+  // Step 2: Build per-month metric objects
+  const result = {};
+  for (const { key } of monthCols) {
+    result[key] = { clients: [], expenses: {}, _colIdx: monthCols.find(m=>m.key===key).colIdx };
+  }
+
+  function getColVal(row, colIdx) {
+    const v = row[colIdx];
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') {
+      const n = parseFloat(v.replace(/[$,\s]/g,''));
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  }
+
+  // Step 3: Scan data rows and map labels to metric keys
+  for (let r = headerRowIdx + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const lbl = String(row[0] || '').trim();
+    if (!lbl) continue;
+
+    for (const { key, colIdx } of monthCols) {
+      const m = result[key];
+      const num = getColVal(row, colIdx);
+      if (num === null) continue;
+
+      if (/total.*(for\s+)?services/i.test(lbl) && !/sub.?account/i.test(lbl)) { if (!m.revenue) m.revenue = num; }
+      if (/total.*(for\s+)?income(\s+with\s+sub.?accounts)?$/i.test(lbl)) { if (!m.revenue) m.revenue = num; }
+      if (/^total for cost of goods sold(\s+with\s+sub-?accounts)?$/i.test(lbl)) { m.cogs = num; }
+      if (/^gross profit$/i.test(lbl)) { m.grossProfit = num; }
+      if (/^total for expenses(\s+with\s+sub-?accounts)?$/i.test(lbl)) { m.totalExpenses = num; }
+      if (/^net (income|loss)$/i.test(lbl)) { m.np = num; }
+      if (/^total for advertising & marketing(?:\s+with\s+sub-?accounts)?$/i.test(lbl)) { if (!m.marketing) m.marketing = num; }
+
+      const expMatch = lbl.match(/^total for (.+?)(?:\s+with\s+sub-?accounts)?$/i);
+      if (expMatch) {
+        const cat = expMatch[1].trim();
+        if (!/^(services|income|cost of goods|subcontractor|expenses|cost of goods sold)$/i.test(cat)) {
+          m.expenses[cat] = num;
+        }
+      }
+    }
+
+    // Client list from transaction rows (date in col 0, type in col 1, name in col 3 or 4)
+    if (isDate(lbl)) {
+      const txType = String(row[1]||'').trim();
+      const txName = String(row[3]||row[4]||'').trim();
+      if (/^invoice$/i.test(txType) && txName) {
+        for (const { key, colIdx } of monthCols) {
+          const amt = getColVal(row, colIdx);
+          if (amt == null || amt <= 0) continue;
+          const m = result[key];
+          const ex = m.clients.find(c => c.name===txName);
+          if (ex) ex.revenue += amt; else m.clients.push({ name:txName, revenue:amt });
+        }
+      }
+    }
+  }
+
+  // Step 4: Finalize each month
+  for (const { key } of monthCols) {
+    const m = result[key];
+    delete m._colIdx;
+    if (m.grossProfit!=null && m.revenue!=null) {
+      const implied = m.revenue - m.grossProfit;
+      if (Math.abs((m.cogs||0) - implied) > 500) m.cogs = implied;
+    }
+    if (!m.grossProfit && m.revenue!=null && m.cogs!=null) m.grossProfit = m.revenue - m.cogs;
+    if (!m.totalExpenses && m.grossProfit!=null && m.np!=null) m.totalExpenses = m.grossProfit - m.np;
+    if (m.revenue) {
+      m.mrr = m.revenue; m.arr = m.revenue * 12;
+      m.gpPct = (m.grossProfit||0) / m.revenue;
+      m.npPct = (m.np||0) / m.revenue;
+    }
+    m.overhead = m.totalExpenses;
+    m.clients.sort((a,b) => b.revenue - a.revenue);
+  }
+
+  // Remove months with no data (all zeros / nulls)
+  for (const key of Object.keys(result)) {
+    if (!result[key].revenue && !result[key].np) delete result[key];
+  }
+
+  return result;
+}
+
 function parsePnLDetail(rows) {
   const m = { clients: [], expenses: {} };
   for (let r = 0; r < rows.length; r++) {
@@ -733,54 +857,137 @@ function monthKeyFromNFCUFilename(name) {
   return mo ? mo + ' ' + year.slice(2) : null;
 }
 
-function extractNFCUMetrics(text) {
+function extractNFCUMetrics(text, debugLabel) {
   const m = {
     checkingDeposits: 0, checkingWithdrawals: 0, checkingEndBal: 0,
     savingsEndBal: 0, gustoIncome: 0, vaIncome: 0, otherIncome: 0, mortgage: 0
   };
 
-  // Summary table: account number followed by 5 dollar amounts
-  // Active Duty Checking = 7960021207
-  const adcRe = /7960021207[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})/;
+  // ── DEBUG: dump raw text so we can calibrate patterns ────────────
+  // Check console for "NFCU RAW TEXT" to see what the PDF produces.
+  // Set window._nfcuDebug = true in the console to enable full dump.
+  const dbg = window._nfcuDebug || false;
+  if (dbg) {
+    console.group('NFCU RAW TEXT — ' + (debugLabel||''));
+    // Print in 500-char chunks so it's not truncated
+    for (let i = 0; i < text.length; i += 500) console.log(text.slice(i, i+500));
+    console.groupEnd();
+  }
+
+  // ── HELPER: find dollar amount near a keyword ────────────────────
+  function amtNear(pattern, windowSize, minAmt, all) {
+    const idx = typeof pattern === 'string' ? text.indexOf(pattern) : text.search(pattern);
+    if (idx === -1) return all ? [] : null;
+    const slice = text.slice(idx, idx + windowSize);
+    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
+      .map(m => parseFloat(m[1].replace(/,/g,'')))
+      .filter(v => v >= (minAmt||0));
+    return all ? nums : (nums[0] ?? null);
+  }
+
+  // ── SUMMARY TABLE ────────────────────────────────────────────────
+  // NFCU statements have a summary table near the top. Layout from pdfjs
+  // text extraction is: account name/number row then amounts on same or
+  // next lines. Try several patterns to handle different PDF layouts.
+
+  // Pattern A: hardcoded account numbers (original approach)
+  const adcRe = /796\s*002\s*1207[\s\S]{0,80}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})/;
   const adcM = text.match(adcRe);
   if (adcM) {
-    m.checkingDeposits     = parseFloat(adcM[2].replace(/,/g,''));
-    m.checkingWithdrawals  = parseFloat(adcM[3].replace(/,/g,''));
-    m.checkingEndBal       = parseFloat(adcM[4].replace(/,/g,''));
+    m.checkingDeposits    = parseFloat(adcM[2].replace(/,/g,''));
+    m.checkingWithdrawals = parseFloat(adcM[3].replace(/,/g,''));
+    m.checkingEndBal      = parseFloat(adcM[4].replace(/,/g,''));
+    if (dbg) console.log('NFCU: checking via acct# match', adcM[2], adcM[3], adcM[4]);
   }
-  // Membership Savings = 3022951895
-  const savRe = /3022951895[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})[\s\$]+(\d[\d,]+\.\d{2})/;
-  const savM = text.match(savRe);
-  if (savM) m.savingsEndBal = parseFloat(savM[4].replace(/,/g,''));
 
-  // Gusto payroll — "Gusto Pay" followed by large amount
-  const amounts = [];
-  const gustoIdx = text.indexOf('Gusto Pay');
-  if (gustoIdx > -1) {
-    const slice = text.slice(gustoIdx, gustoIdx + 300);
-    const nums = slice.match(/(\d{1,2},\d{3}\.\d{2}|\d{4,}\.\d{2})/g) || [];
-    nums.forEach(n => { const v = parseFloat(n.replace(/,/g,'')); if (v > 1000) m.gustoIncome += v; });
+  // Pattern B: "Checking" label near Deposits / Withdrawals labels
+  if (!m.checkingDeposits) {
+    const checkIdx = text.search(/checking account|active duty checking/i);
+    if (checkIdx > -1) {
+      const slice = text.slice(checkIdx, checkIdx + 600);
+      const depM  = slice.match(/deposits?\s*\$?([\d,]+\.\d{2})/i);
+      const wdM   = slice.match(/withdrawals?\s*\$?([\d,]+\.\d{2})/i);
+      const balM  = slice.match(/ending balance\s*\$?([\d,]+\.\d{2})/i) ||
+                    slice.match(/closing balance\s*\$?([\d,]+\.\d{2})/i) ||
+                    slice.match(/balance\s+(?:this|at end)\s*\$?([\d,]+\.\d{2})/i);
+      if (depM) m.checkingDeposits    = parseFloat(depM[1].replace(/,/g,''));
+      if (wdM)  m.checkingWithdrawals = parseFloat(wdM[1].replace(/,/g,''));
+      if (balM) m.checkingEndBal      = parseFloat(balM[1].replace(/,/g,''));
+      if (dbg) console.log('NFCU: checking via label match', depM?.[1], wdM?.[1]);
+    }
   }
-  // VA benefits — "Vacp Treas"
-  const vaIdx = text.indexOf('Vacp Treas');
-  if (vaIdx > -1) {
-    const slice = text.slice(vaIdx, vaIdx + 200);
-    const nums = slice.match(/(\d{1,2},\d{3}\.\d{2}|\d{4,}\.\d{2})/g) || [];
-    nums.forEach(n => { const v = parseFloat(n.replace(/,/g,'')); if (v > 500) m.vaIncome += v; });
+
+  // Savings account
+  const savRe = /302\s*295\s*1895[\s\S]{0,80}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})/;
+  const savM = text.match(savRe);
+  if (savM) {
+    m.savingsEndBal = parseFloat(savM[4].replace(/,/g,''));
+    if (dbg) console.log('NFCU: savings via acct#', savM[4]);
   }
-  // Mortgage — "Lakeview" or "Mtg Pymt"
-  const mtgIdx = text.search(/Lakeview|Mtg Pymt/i);
-  if (mtgIdx > -1) {
-    const slice = text.slice(mtgIdx, mtgIdx + 200);
-    const nums = slice.match(/(\d{1,2},\d{3}\.\d{2}|\d{3,}\.\d{2})/g) || [];
-    if (nums.length) m.mortgage = parseFloat(nums[0].replace(/,/g,''));
+  if (!m.savingsEndBal) {
+    const savIdx = text.search(/savings account|membership savings/i);
+    if (savIdx > -1) {
+      const slice = text.slice(savIdx, savIdx + 400);
+      const balM = slice.match(/ending balance\s*\$?([\d,]+\.\d{2})/i) ||
+                   slice.match(/closing balance\s*\$?([\d,]+\.\d{2})/i);
+      if (balM) m.savingsEndBal = parseFloat(balM[1].replace(/,/g,''));
+    }
   }
+
+  // ── GUSTO PAYROLL ────────────────────────────────────────────────
+  // Try multiple spellings: "Gusto Pay", "GUSTO", "Gusto, Inc"
+  const gustoRe = /gusto\s*(?:pay|inc\.?|payroll)?/ig;
+  let gm;
+  while ((gm = gustoRe.exec(text)) !== null) {
+    const slice = text.slice(gm.index, gm.index + 300);
+    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
+      .map(x => parseFloat(x[1].replace(/,/g,'')))
+      .filter(v => v > 1000);
+    if (nums.length) { m.gustoIncome += nums[0]; if (dbg) console.log('NFCU: gusto hit', nums[0], 'near:', slice.slice(0,60)); }
+  }
+
+  // ── VA BENEFITS ──────────────────────────────────────────────────
+  // Try: "Vacp Treas", "VACP", "VA Benefits", "Dept Vet"
+  const vaRe = /vacp\s*treas|va\s*benefits?|dept\s*vet|veterans?\s*affairs/ig;
+  let vm;
+  while ((vm = vaRe.exec(text)) !== null) {
+    const slice = text.slice(vm.index, vm.index + 200);
+    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
+      .map(x => parseFloat(x[1].replace(/,/g,'')))
+      .filter(v => v > 500);
+    if (nums.length) { m.vaIncome += nums[0]; if (dbg) console.log('NFCU: VA hit', nums[0], 'near:', slice.slice(0,60)); }
+  }
+
+  // ── MORTGAGE ────────────────────────────────────────────────────
+  const mtgRe = /lakeview|mtg\s*pymt|mortgage\s*payment|freedom\s*mortg/ig;
+  let mm;
+  while ((mm = mtgRe.exec(text)) !== null) {
+    const slice = text.slice(mm.index, mm.index + 200);
+    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
+      .map(x => parseFloat(x[1].replace(/,/g,'')))
+      .filter(v => v > 500);
+    if (nums.length && !m.mortgage) { m.mortgage = nums[0]; if (dbg) console.log('NFCU: mortgage hit', nums[0]); }
+  }
+
+  // ── ALWAYS LOG SUMMARY to console for verification ───────────────
+  console.log('NFCU parse result —', debugLabel||'', {
+    checkingDeposits: m.checkingDeposits,
+    checkingWithdrawals: m.checkingWithdrawals,
+    checkingEndBal: m.checkingEndBal,
+    savingsEndBal: m.savingsEndBal,
+    gustoIncome: m.gustoIncome,
+    vaIncome: m.vaIncome,
+    mortgage: m.mortgage,
+    gusto_found: text.search(/gusto/i) !== -1,
+    va_found: text.search(/vacp|va benefits/i) !== -1,
+    lakeview_found: text.search(/lakeview|mtg pymt/i) !== -1,
+  });
 
   m.otherIncome = Math.max(0, m.checkingDeposits - m.gustoIncome - m.vaIncome);
   return m;
 }
 
-async function parseNFCUPDF(arrayBuffer) {
+async function parseNFCUPDF(arrayBuffer, fileName) {
   ensurePdfJs();
   if (!window.pdfjsLib) return null;
   try {
@@ -791,7 +998,7 @@ async function parseNFCUPDF(arrayBuffer) {
       const content = await page.getTextContent();
       allText += ' ' + content.items.map(i => i.str).join(' ');
     }
-    return extractNFCUMetrics(allText);
+    return extractNFCUMetrics(allText, fileName);
   } catch(e) {
     console.error('NFCU PDF parse error:', e);
     return null;
@@ -868,24 +1075,41 @@ async function loadAll() {
     const rootId = await findFolder(ROOT_FOLDER);
     if (!rootId) throw new Error(`Folder "${ROOT_FOLDER}" not found in Drive`);
 
-    // THL — QB P&L Detail format
+    // THL — QB P&L format (annual multi-month OR individual monthly files)
     setLoadingMsg('Loading THL P&Ls...');
     const thlFolderId = await findFolder('Tele-Help-Ing 2026', rootId);
     if (thlFolderId) {
       const files = await listSpreadsheets(thlFolderId);
       for (const file of files) {
-        const key = monthKeyFromName(file.name);
-        if (!key || /unearned/i.test(file.name)) continue;
+        if (/unearned/i.test(file.name)) continue;
         setLoadingMsg(`Parsing THL ${file.name}...`);
-        const buf = await downloadXlsx(file.id, file.mimeType);
-        const wb = XLSX.read(buf, { type:'array' });
-        const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
-        const metrics = parsePnLDetail(rows);
-        // Sanity: skip files where GP > Revenue (corrupt/wrong format)
-        if (!metrics.revenue) continue;
-        if (metrics.grossProfit && metrics.grossProfit > metrics.revenue * 1.01) continue;
-        thlData[key] = { metrics, fileName: file.name };
+        try {
+          const buf = await downloadXlsx(file.id, file.mimeType);
+          const wb = XLSX.read(buf, { type:'array' });
+          const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+          // Try annual (multi-month columns) parser first
+          const annualResult = parsePnLAnnual(rows);
+          if (annualResult && Object.keys(annualResult).length > 0) {
+            for (const [key, metrics] of Object.entries(annualResult)) {
+              if (!metrics.revenue) continue;
+              if (metrics.grossProfit && metrics.grossProfit > metrics.revenue * 1.01) continue;
+              if (!thlData[key]) thlData[key] = { metrics, fileName: file.name };
+            }
+            console.log('THL annual parse:', file.name, '-> months:', Object.keys(annualResult).join(', '));
+          } else {
+            // Fallback: single-month detail file (filename contains month)
+            const key = monthKeyFromName(file.name);
+            if (!key) continue;
+            const metrics = parsePnLDetail(rows);
+            if (!metrics.revenue) continue;
+            if (metrics.grossProfit && metrics.grossProfit > metrics.revenue * 1.01) continue;
+            if (!thlData[key]) thlData[key] = { metrics, fileName: file.name };
+            console.log('THL monthly parse:', file.name, '->', key);
+          }
+        } catch(e) {
+          console.warn('THL parse error:', file.name, e.message);
+        }
       }
     }
 
@@ -974,7 +1198,7 @@ async function loadAll() {
         if (!key) continue;
         setLoadingMsg(`Parsing NFCU ${file.name}...`);
         const buf = await downloadFile(file.id);
-        const metrics = await parseNFCUPDF(buf);
+        const metrics = await parseNFCUPDF(buf, file.name);
         if (metrics && metrics.checkingDeposits > 0) {
           personalData[key] = { metrics, fileName: file.name };
         }
