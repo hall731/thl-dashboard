@@ -348,13 +348,24 @@ td.pos{color:var(--green)}td.neg{color:var(--red)}
         <p style="margin-top:.5rem;font-size:12px">Add monthly P&L xlsx files to the <strong>Los Gringos Cafe 2026</strong> folder in Drive</p>
       </div>
       <div id="gringos-content" style="display:none">
-        <div class="period-bar"><span>Period:</span><div id="gringos-tabs"></div></div>
+        <div class="period-bar" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px"><span>Period:</span><div id="gringos-tabs"></div></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button id="lgc-mxn-btn" class="tab active" onclick="setLGCCurrency('MXN')" style="font-size:12px;padding:4px 10px">MX$ MXN</button>
+            <button id="lgc-usd-btn" class="tab" onclick="setLGCCurrency('USD')" style="font-size:12px;padding:4px 10px">$ USD</button>
+            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px">
+              Rate: <input id="lgc-rate" type="number" value="17.5" min="1" step="0.1"
+                style="width:65px;padding:3px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;text-align:right"
+                oninput="renderGringos()"> MXN/USD
+            </label>
+          </div>
+        </div>
         <div class="overview-kpis" id="gringos-kpis"></div>
         <div class="chart-card">
           <div class="chart-wrap"><canvas id="gringos-chart"></canvas></div>
         </div>
         <div class="table-card">
-          <div class="card-title">Summary P&L</div>
+          <div class="card-title">Summary P&L <span id="lgc-currency-label" style="font-size:11px;color:var(--muted);font-weight:400"></span></div>
           <table id="gringos-table"></table>
         </div>
       </div>
@@ -1282,16 +1293,23 @@ function getYTDSum(store, key) {
 }
 
 function renderOverview() {
+  // LGC numbers are in MXN — convert to USD for overview comparability
+  const lgcRate = parseFloat(document.getElementById('lgc-rate')?.value || 17.5) || 17.5;
+  function getYTDSumUSD(store, key) {
+    const raw = MONTH_ORDER.filter(k => store[k]).reduce((s,k) => s + (store[k].metrics[key]||0), 0);
+    return store === gringosData ? raw / lgcRate : raw;
+  }
+
   const entities = [
     { name:'Tele-Help-Ing', sub:'Staffing', store: thlData, color:'#7c6ef7', tab:'thl' },
     { name:"Cody's Holdings", sub:'Consulting + Airbnb', store: holdingsData, color:'#4ade80', tab:'holdings' },
-    { name:'Los Gringos Cafe', sub:'Restaurant', store: gringosData, color:'#fbbf24', tab:'gringos' },
+    { name:'Los Gringos Cafe', sub:'Restaurant (MXN→USD)', store: gringosData, color:'#fbbf24', tab:'gringos' },
   ];
 
-  // Total YTD across all entities
-  const totalRev = entities.reduce((s,e) => s + getYTDSum(e.store,'revenue'), 0);
-  const totalGP  = entities.reduce((s,e) => s + getYTDSum(e.store,'grossProfit'), 0);
-  const totalNP  = entities.reduce((s,e) => s + getYTDSum(e.store,'np'), 0);
+  // Total YTD across all entities (LGC converted to USD)
+  const totalRev = entities.reduce((s,e) => s + getYTDSumUSD(e.store,'revenue'), 0);
+  const totalGP  = entities.reduce((s,e) => s + getYTDSumUSD(e.store,'grossProfit'), 0);
+  const totalNP  = entities.reduce((s,e) => s + getYTDSumUSD(e.store,'np'), 0);
   const airbnbYTD = Object.values(airbnbData).reduce((s,m) => s + (m.payouts||m.revenue||0), 0);
 
   document.getElementById('overview-kpis').innerHTML = [
@@ -1302,9 +1320,9 @@ function renderOverview() {
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
 
   const rows = entities.map(e => {
-    const ytdRev = getYTDSum(e.store,'revenue');
-    const ytdGP  = getYTDSum(e.store,'grossProfit');
-    const ytdNP  = getYTDSum(e.store,'np');
+    const ytdRev = getYTDSumUSD(e.store,'revenue');
+    const ytdGP  = getYTDSumUSD(e.store,'grossProfit');
+    const ytdNP  = getYTDSumUSD(e.store,'np');
     const npPct  = ytdRev ? ytdNP/ytdRev : null;
     const hasData = MONTH_ORDER.some(k => e.store[k]);
     return `<div class="entity-row" onclick="showEntity('${e.tab}',null)">
@@ -1614,6 +1632,14 @@ function renderHoldings() {
 // ── LOS GRINGOS ──────────────────────────────────────────────────
 let gringosChart = null;
 let gringosSelectedMonth = null;
+let lgcCurrency = 'MXN'; // 'MXN' or 'USD'
+
+function setLGCCurrency(c) {
+  lgcCurrency = c;
+  document.getElementById('lgc-mxn-btn').className = 'tab' + (c==='MXN'?' active':'');
+  document.getElementById('lgc-usd-btn').className = 'tab' + (c==='USD'?' active':'');
+  renderGringos();
+}
 
 function renderGringos() {
   const loaded = MONTH_ORDER.filter(k=>gringosData[k]);
@@ -1621,6 +1647,22 @@ function renderGringos() {
   document.getElementById('gringos-empty').style.display='none';
   document.getElementById('gringos-content').style.display='block';
   if (!gringosSelectedMonth) gringosSelectedMonth = loaded[loaded.length-1];
+
+  // Currency conversion
+  const rate = parseFloat(document.getElementById('lgc-rate')?.value || 17.5) || 17.5;
+  const isUSD = lgcCurrency === 'USD';
+  const conv = v => v == null ? null : (isUSD ? v / rate : v);
+  const fmtC = v => {
+    if (v == null || isNaN(v)) return '—';
+    const abs = Math.abs(Math.round(v));
+    const prefix = v < 0 ? '-' : '';
+    return isUSD ? prefix + '$' + abs.toLocaleString() : prefix + 'MX$' + abs.toLocaleString();
+  };
+  const fmtCk = v => { // for chart axis
+    if (!v) return (isUSD?'$':'MX$')+'0';
+    return (isUSD?'$':'MX$') + Math.round(Math.abs(v)/1000) + 'k';
+  };
+  document.getElementById('lgc-currency-label').textContent = isUSD ? `(USD @ ${rate} MXN)` : '(Mexican Pesos)';
 
   const tabsEl = document.getElementById('gringos-tabs');
   tabsEl.innerHTML='';
@@ -1633,16 +1675,16 @@ function renderGringos() {
 
   const m = gringosData[gringosSelectedMonth].metrics;
   document.getElementById('gringos-kpis').innerHTML=[
-    {label:'Revenue',val:fmt$(m.revenue)},
-    {label:'Gross Profit',val:fmt$(m.grossProfit),color:(m.grossProfit||0)>=0?'var(--green)':'var(--red)'},
-    {label:'GP %',val:fmtPct(m.gpPct)},
-    {label:'Expenses',val:fmt$(m.totalExpenses)},
-    {label:'Net Income',val:fmt$(m.np),color:(m.np||0)>=0?'var(--green)':'var(--red)'},
-    {label:'NP %',val:fmtPct(m.npPct),color:(m.npPct||0)>=0?'var(--green)':'var(--red)'},
+    {label:'Revenue',      val:fmtC(conv(m.revenue))},
+    {label:'Gross Profit', val:fmtC(conv(m.grossProfit)), color:(m.grossProfit||0)>=0?'var(--green)':'var(--red)'},
+    {label:'GP %',         val:fmtPct(m.gpPct)},
+    {label:'Expenses',     val:fmtC(conv(m.totalExpenses))},
+    {label:'Net Income',   val:fmtC(conv(m.np)), color:(m.np||0)>=0?'var(--green)':'var(--red)'},
+    {label:'NP %',         val:fmtPct(m.npPct), color:(m.npPct||0)>=0?'var(--green)':'var(--red)'},
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
 
-  const revs=loaded.map(k=>gringosData[k].metrics.revenue||0);
-  const nps=loaded.map(k=>gringosData[k].metrics.np||0);
+  const revs = loaded.map(k=>conv(gringosData[k].metrics.revenue)||0);
+  const nps  = loaded.map(k=>conv(gringosData[k].metrics.np)||0);
   if(gringosChart)gringosChart.destroy();
   gringosChart=new Chart(document.getElementById('gringos-chart'),{
     type:'bar',data:{labels:loaded,datasets:[
@@ -1650,8 +1692,9 @@ function renderGringos() {
       {label:'NP',data:nps,backgroundColor:nps.map(v=>v>=0?'#4ade80':'#f87171'),borderRadius:4},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{ticks:{color:'#888',callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'rgba(255,255,255,.05)'}},x:{ticks:{color:'#888'},grid:{display:false}}}}
+      scales:{y:{ticks:{color:'#888',callback:v=>fmtCk(v)},grid:{color:'rgba(255,255,255,.05)'}},x:{ticks:{color:'#888'},grid:{display:false}}}}
   });
+
   const pnlRows=[
     {label:'Revenue',key:'revenue',bold:true},
     {label:'COGS',key:'cogs'},
@@ -1664,9 +1707,12 @@ function renderGringos() {
   const th3=`<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
   const tb3='<tbody>'+pnlRows.map(r=>{
     const cls=r.bold?'row-bold':r.pct?'row-pct':'';
-    const cells=loaded.map(k=>{const v=gringosData[k].metrics[r.key];return `<td class="${!r.pct&&v<0?'neg':''}">${r.pct?fmtPct(v):fmt$(v)}</td>`;}).join('');
+    const cells=loaded.map(k=>{
+      const v=gringosData[k].metrics[r.key];
+      return `<td class="${!r.pct&&v<0?'neg':''}">${r.pct?fmtPct(v):fmtC(conv(v))}</td>`;
+    }).join('');
     const ytdV=r.pct?null:loaded.reduce((s,k)=>s+(gringosData[k].metrics[r.key]||0),0);
-    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td>${r.pct?'—':fmt$(ytdV)}</td></tr>`;
+    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td>${r.pct?'—':fmtC(conv(ytdV))}</td></tr>`;
   }).join('')+'</tbody>';
   document.getElementById('gringos-table').innerHTML=th3+tb3;
 }
