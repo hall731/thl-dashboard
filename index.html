@@ -1791,7 +1791,9 @@ function renderPersonal() {
   }
   if (emptyEl) emptyEl.style.display='none';
   if (contentEl) contentEl.style.display='block';
-  if (!personalSelectedMonth || (personalSelectedMonth !== 'YTD' && !personalData[personalSelectedMonth])) personalSelectedMonth = loaded[loaded.length-1];
+  // Default to last loaded month, but never override a valid selection
+  if (!personalSelectedMonth) personalSelectedMonth = loaded[loaded.length-1];
+  if (personalSelectedMonth !== 'YTD' && !personalData[personalSelectedMonth]) personalSelectedMonth = loaded[loaded.length-1];
 
   // Tabs
   const tabsEl = document.getElementById('personal-tabs');
@@ -1809,6 +1811,7 @@ function renderPersonal() {
   ytd.onclick = () => { personalSelectedMonth='YTD'; renderPersonal(); };
   tabsEl.appendChild(ytd);
 
+  // Re-check after tab rebuild: if somehow reset, honour 'YTD' string
   const isYTD = personalSelectedMonth === 'YTD';
   function getM(k) { return personalData[k]?.metrics || {}; }
   const m = isYTD ? {
