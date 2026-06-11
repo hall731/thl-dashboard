@@ -874,10 +874,12 @@ async function loadAll() {
     // Also loads Relay bank PDFs from the same folder
     setLoadingMsg('Loading Holdings P&Ls...');
     const holdFolderId = await findFolder('Codys Holding', rootId);
+    window._holdingsDebug = [`Folder: ${holdFolderId ? 'FOUND ('+holdFolderId+')' : 'NOT FOUND'}`];
     if (holdFolderId) {
       // Include Google Sheets MIME type in case Drive auto-converted the xlsx files
       const XLSX_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.google-apps.spreadsheet','application/vnd.ms-excel'];
       const xlsxFiles = await listFiles(holdFolderId, XLSX_TYPES);
+      window._holdingsDebug.push(`Files found: ${xlsxFiles.length} (${xlsxFiles.map(f=>f.name.slice(0,20)+'/'+f.mimeType.split('/').pop()).join(', ')})`);
       for (const file of xlsxFiles) {
         setLoadingMsg(`Parsing Holdings ${file.name}...`);
         try {
@@ -885,11 +887,14 @@ async function loadAll() {
           const wb = XLSX.read(buf, { type:'array' });
           const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
           const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+          const row2val = rows[2]?.[0];
           const metrics = parseHoldingsSimple(rows);
           const key = metrics._monthKey;
+          window._holdingsDebug.push(`${file.name.slice(0,20)}: row2="${row2val}" key=${key||'NULL'} rev=${metrics.revenue||'none'}`);
           if (key) holdingsData[key] = { metrics, fileName: file.name };
-          else console.warn('Holdings: no month key found in', file.name, 'row2=', rows[2]?.[0]);
-        } catch(e) { console.warn('Holdings parse error:', file.name, e.message); }
+        } catch(e) {
+          window._holdingsDebug.push(`ERROR ${file.name.slice(0,20)}: ${e.message}`);
+        }
       }
       // PDFs = Relay business bank statements
       ensurePdfJs();
@@ -1188,7 +1193,8 @@ function renderHoldings() {
   const allLoaded = [...new Set([...loaded, ...airbnbLoaded])].sort((a,b)=>MONTH_ORDER.indexOf(a)-MONTH_ORDER.indexOf(b));
 
   if (!allLoaded.length) {
-    document.getElementById('holdings-kpis').innerHTML = '<div class="empty-state" style="grid-column:1/-1">No Holdings P&L data found — check files are in the Codys Holding folder</div>';
+    const dbg = (window._holdingsDebug || []).join('\n');
+    document.getElementById('holdings-kpis').innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:left;font-size:11px;font-family:monospace;white-space:pre-wrap;color:#f87171">${dbg || 'No Holdings data and no debug info'}</div>`;
     return;
   }
   if (!holdingsSelectedMonth) holdingsSelectedMonth = allLoaded[allLoaded.length-1];
