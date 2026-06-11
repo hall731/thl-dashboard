@@ -450,10 +450,29 @@ async function driveGet(url) {
   return r.json();
 }
 async function findFolder(name, parentId) {
-  let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  // List ALL subfolders and fuzzy-match — handles apostrophes, spaces, case differences
+  let q = `mimeType='application/vnd.google-apps.folder' and trashed=false`;
   if (parentId) q += ` and '${parentId}' in parents`;
   const d = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
-  return d.files[0]?.id || null;
+  if (!d.files?.length) return null;
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const target = norm(name);
+  const exact = d.files.find(f => f.name === name);
+  if (exact) return exact.id;
+  const fuzzy = d.files.find(f => norm(f.name) === target || norm(f.name).includes(target) || target.includes(norm(f.name)));
+  console.log('findFolder', name, '→ folders found:', d.files.map(f=>f.name), '→ matched:', fuzzy?.name || 'NONE');
+  return fuzzy?.id || null;
+}
+async function listSpreadsheets(folderId) {
+  // List ALL files in folder and filter to spreadsheet types by name or MIME type
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  const d = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType)&pageSize=50`);
+  return (d.files||[]).filter(f =>
+    f.name.match(/\.(xlsx|xls|ods)$/i) ||
+    f.mimeType.includes('spreadsheet') ||
+    f.mimeType.includes('excel') ||
+    f.mimeType.includes('openxmlformats')
+  );
 }
 async function listFiles(folderId, mimeTypes) {
   const mimeQ = mimeTypes.map(m => `mimeType='${m}'`).join(' or ');
@@ -853,7 +872,7 @@ async function loadAll() {
     setLoadingMsg('Loading THL P&Ls...');
     const thlFolderId = await findFolder('Tele-Help-Ing 2026', rootId);
     if (thlFolderId) {
-      const files = await listFiles(thlFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.google-apps.spreadsheet']);
+      const files = await listSpreadsheets(thlFolderId);
       for (const file of files) {
         const key = monthKeyFromName(file.name);
         if (!key || /unearned/i.test(file.name)) continue;
@@ -876,9 +895,8 @@ async function loadAll() {
     const holdFolderId = await findFolder('Codys Holding', rootId);
     window._holdingsDebug = [`Folder: ${holdFolderId ? 'FOUND ('+holdFolderId+')' : 'NOT FOUND'}`];
     if (holdFolderId) {
-      // Include Google Sheets MIME type in case Drive auto-converted the xlsx files
       const XLSX_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.google-apps.spreadsheet','application/vnd.ms-excel'];
-      const xlsxFiles = await listFiles(holdFolderId, XLSX_TYPES);
+      const xlsxFiles = await listSpreadsheets(holdFolderId);
       window._holdingsDebug.push(`Files found: ${xlsxFiles.length} (${xlsxFiles.map(f=>f.name.slice(0,20)+'/'+f.mimeType.split('/').pop()).join(', ')})`);
       for (const file of xlsxFiles) {
         setLoadingMsg(`Parsing Holdings ${file.name}...`);
