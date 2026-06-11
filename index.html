@@ -947,14 +947,28 @@ function extractNFCUMetrics(text, debugLabel) {
     return allNums.length ? allNums[0] : null;
   }
 
-  // ── GUSTO PAYROLL ─────────────────────────────────────────────────
-  // pdfjs text: "Gusto Pay 798073 01Afd9" or "Gusto Con 265314 01Afd9"
-  m.gustoIncome  = sumTxAmts('Gusto Pay', 1000);
-  m.gustoIncome += sumTxAmts('Gusto Con', 1000);
-
   // ── VA BENEFITS ───────────────────────────────────────────────────
-  // pdfjs text: "Vacp Treas 310 Xxva Benef 01Afd9"
-  m.vaIncome = sumTxAmts('Vacp Treas', 500);
+  // "Vacp Treas 310 Xxva Benef 01Afd9" — paid every month, always $4,428.10
+  // pdfjs scatters the amount, so count occurrences and multiply by known amount
+  const VA_MONTHLY = 4428.10;
+  let vaCount = 0;
+  let vaPos = 0;
+  while (true) {
+    const idx = text.indexOf('Vacp Treas', vaPos);
+    if (idx === -1) break;
+    vaCount++;
+    vaPos = idx + 1;
+  }
+  m.vaIncome = vaCount * VA_MONTHLY;
+
+  // ── GUSTO / S-CORP PAYROLL ────────────────────────────────────────
+  // S-corp payroll deposits show as: "Codys Holding In Payroll 01Afd9"
+  // (pdfjs strips "Deposit - ACH Paid From" prefix)
+  // This IS personal income — it's Cody's W2 salary from his own S-corp
+  m.gustoIncome = sumTxAmts('Holding In Payroll', 500);
+  // Also catch any direct Gusto deposits (legacy W2 format)
+  m.gustoIncome += sumTxAmts('Gusto Pay', 1000);
+  m.gustoIncome += sumTxAmts('Gusto Con', 1000);
 
   // ── MORTGAGE ──────────────────────────────────────────────────────
   // pdfjs text: "Lakeview LN Srv Mtg Pymt Chk 9100001"
