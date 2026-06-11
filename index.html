@@ -1081,59 +1081,55 @@ function parseHoldingsSimple(rows) {
   m.overhead = m.totalExpenses;
 
   // ── CONSULTING vs AIRBNB SPLIT ────────────────────────────────
-  // Airbnb expense categories (property/rental costs)
   const AIRBNB_KEYS = ['cleaning','utilities','disposal','internet','home depot',
     'home goods','home improvement','license','hoa','pool','pest','maintenance',
     'repair','landscap','insurance','mortgage','property'];
-  // Consulting expense categories (business operations)
   const CONSULT_KEYS = ['travel','flight','hotel','lodging','meals','restaurant',
     'dining','food','advertising','marketing','contract labor','contractor',
     'professional','subscription','software','phone','office','supplies',
     'payroll','salary','wages','gusto','accounting','legal'];
 
-  let airbnbExp = 0, consultingExp = 0, unallocated = 0;
+  let airbnbExp = 0, consultingExp = 0;
   const airbnbExpDetail = {}, consultingExpDetail = {};
 
   for (const [lbl, val] of Object.entries(expLines)) {
     if (val <= 0) continue;
-    const isAirbnb   = AIRBNB_KEYS.some(k => lbl.includes(k));
-    const isConsult  = CONSULT_KEYS.some(k => lbl.includes(k));
+    const isAirbnb  = AIRBNB_KEYS.some(k => lbl.includes(k));
+    const isConsult = CONSULT_KEYS.some(k => lbl.includes(k));
     if (isAirbnb && !isConsult) {
       airbnbExp += val;
       airbnbExpDetail[lbl] = val;
-    } else if (isConsult && !isAirbnb) {
+    } else {
+      // Consulting catches all: explicitly consulting + unclassified business ops
       consultingExp += val;
       consultingExpDetail[lbl] = val;
-    } else {
-      unallocated += val; // split 50/50 if ambiguous
-      airbnbExp    += val * 0.5;
-      consultingExp += val * 0.5;
     }
   }
 
-  // If we couldn't extract line items, fall back to COGS = Airbnb, Expenses = Consulting
   if (airbnbExp === 0 && consultingExp === 0 && m.totalExpenses) {
-    airbnbExp    = m.cogs || 0;
+    airbnbExp     = m.cogs || 0;
     consultingExp = m.totalExpenses || 0;
   }
 
-  // Airbnb income: from transaction rows if available (QB detail format)
-  // For simple format, assume Airbnb revenue = COGS-adjacent income (approximation)
-  // If no line-level data, we can't split revenue — mark as N/A
-  const airbnbRev = m.airbnbRevenue || 0; // populated by parseHoldingsPnL if QB detail
-  const consultRev = (m.revenue||0) - airbnbRev;
+  // Consulting: all revenue (service business, no COGS)
+  const consultRev = m.revenue || 0;
+  const consultNP  = consultRev - consultingExp;
 
   m.airbnb = {
-    revenue:  airbnbRev,
-    expenses: Math.round(airbnbExp),
-    np:       airbnbRev - Math.round(airbnbExp),
+    revenue:   0, // Airbnb revenue tracked via CSV separately
+    expenses:  Math.round(airbnbExp),
+    np:        -Math.round(airbnbExp),
     expDetail: airbnbExpDetail,
   };
   m.consulting = {
-    revenue:  consultRev || m.revenue, // if no Airbnb rev split, show total
-    expenses: Math.round(consultingExp),
-    np:       (consultRev || m.revenue||0) - Math.round(consultingExp),
-    expDetail: consultingExpDetail,
+    revenue:      consultRev,
+    grossProfit:  consultRev,  // service biz — 100% GP
+    gpPct:        consultRev ? 1.0 : null,
+    totalExpenses: Math.round(consultingExp),
+    expenses:     Math.round(consultingExp),
+    np:           Math.round(consultNP),
+    npPct:        consultRev ? consultNP / consultRev : null,
+    expDetail:    consultingExpDetail,
   };
 
   return m;
@@ -1601,9 +1597,18 @@ function renderHoldings() {
   // Get metrics based on sub-view
   function getMetrics(key) {
     if (holdingsSubView==='airbnb') {
-      const a = airbnbData[key];
-      if (!a) return null;
-      return { revenue: a.revenue||0, np: a.payouts||a.revenue||0, nights: a.nights, bookings: a.bookings };
+      // Combine: Airbnb CSV revenue/nights/bookings + QB property expenses
+      const a = airbnbData[key] || {};
+      const qbAirbnb = holdingsData[key]?.metrics?.airbnb || {};
+      return {
+        revenue:  a.revenue||0,
+        payouts:  a.payouts||a.revenue||0,
+        nights:   a.nights||0,
+        bookings: a.bookings||0,
+        expenses: qbAirbnb.expenses||0,
+        np:       (a.payouts||a.revenue||0) - (qbAirbnb.expenses||0),
+        expDetail: qbAirbnb.expDetail||{},
+      };
     }
     if (!holdingsData[key]) return null;
     const m = holdingsData[key].metrics;
@@ -1625,15 +1630,23 @@ function renderHoldings() {
 
   if (!m) { document.getElementById('holdings-kpis').innerHTML = '<div class="empty-state">No data for this period</div>'; return; }
 
-  const npPct = m.revenue ? (m.np||0)/m.revenue : null;
-  const gpPct = m.revenue ? (m.grossProfit||0)/m.revenue : null;
+  const npPct = m.npPct !== undefined ? m.npPct : (m.revenue ? (m.np||0)/m.revenue : null);
+  const gpPct = m.gpPct !== undefined ? m.gpPct : (m.revenue ? (m.grossProfit||0)/m.revenue : null);
 
   document.getElementById('holdings-kpis').innerHTML = holdingsSubView==='airbnb' ? [
-    { label:'Gross Revenue',  val:fmt$(m.revenue) },
-    { label:'Payouts',        val:fmt$(m.np), color:'var(--green)' },
-    { label:'Total Nights',   val:(m.nights||0)+' nights' },
-    { label:'Total Bookings', val:(m.bookings||0)+' bookings' },
-  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('')
+    { label:'Gross Revenue',   val:fmt$(m.revenue),  color:'var(--text)' },
+    { label:'Payouts',         val:fmt$(m.np),        color:'var(--green)' },
+    { label:'Property Costs',  val:fmt$(m.expenses),  color:'var(--muted)' },
+    { label:'Total Nights',    val:(m.nights||0)+' nights' },
+    { label:'Total Bookings',  val:(m.bookings||0)+' bookings' },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="color:${k.color||'var(--text)'}">${k.val}</div></div>`).join('')
+  : holdingsSubView==='consulting' ? [
+    { label:'Revenue',         val:fmt$(m.revenue),                color:'var(--text)' },
+    { label:'GP % (service)',  val:'100%',                         color:'var(--green)' },
+    { label:'Expenses',        val:fmt$(m.totalExpenses||m.expenses), color:'var(--muted)' },
+    { label:'Net Income',      val:fmt$(m.np),                     color:tlColor(npPct, HOL_BENCHMARKS.npPct.green, HOL_BENCHMARKS.npPct.amber) },
+    { label:'NP %',            val:fmtPct(npPct),                  color:tlColor(npPct, HOL_BENCHMARKS.npPct.green, HOL_BENCHMARKS.npPct.amber) },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="color:${k.color||'var(--text)'}">${k.val}</div></div>`).join('')
   : [
     { label:'Revenue',      val:fmt$(m.revenue),              color:'var(--text)' },
     { label:'Gross Profit', val:fmt$(m.grossProfit||m.revenue),color:tlColor(gpPct, HOL_BENCHMARKS.gpPct.green, HOL_BENCHMARKS.gpPct.amber) },
