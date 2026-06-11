@@ -1066,6 +1066,35 @@ function parseHoldingsSimple(rows) {
   return m;
 }
 
+// ── LGC P&L PARSER ───────────────────────────────────────────────
+// LGC uses a QB-style P&L sheet with these exact labels:
+// "Food Sales" = revenue, "Total for Income", "Total for Cost of Goods Sold",
+// "Total for Expenses", "Net Income"
+function parseLGCPnL(rows) {
+  const m = { expenses: {}, clients: [] };
+  for (const row of rows) {
+    if (!row) continue;
+    const lbl = String(row[0] || '').trim();
+    const num = lastNum(row);
+    if (!lbl || num == null) continue;
+
+    if (/^food sales$/i.test(lbl))                                      m.revenue = num;
+    if (/^total for income/i.test(lbl))                    { if (!m.revenue) m.revenue = num; }
+    if (/^total for cost of goods sold/i.test(lbl))                     m.cogs = num;
+    if (/^gross profit$/i.test(lbl))                                    m.grossProfit = num;
+    if (/^total for expenses/i.test(lbl))                               m.totalExpenses = num;
+    if (/^net income$/i.test(lbl))                                      m.np = num;
+  }
+  if (!m.grossProfit && m.revenue != null && m.cogs != null) m.grossProfit = m.revenue - m.cogs;
+  if (!m.totalExpenses && m.grossProfit != null && m.np != null) m.totalExpenses = m.grossProfit - m.np;
+  if (m.revenue) {
+    m.gpPct = (m.grossProfit||0) / m.revenue;
+    m.npPct = (m.np||0) / m.revenue;
+  }
+  m.overhead = m.totalExpenses;
+  return m;
+}
+
 // ── LOAD ALL ─────────────────────────────────────────────────────
 async function loadAll() {
   if (!accessToken) { tokenClient.requestAccessToken({ prompt:'' }); return; }
@@ -1168,19 +1197,31 @@ async function loadAll() {
       }
     }
 
-    // Los Gringos
+    // Los Gringos — use listSpreadsheets to catch Google Sheets + xlsx
     setLoadingMsg('Loading Los Gringos P&Ls...');
     const gringosFolderId = await findFolder('Los Gringos Cafe 2026', rootId);
     if (gringosFolderId) {
-      const files = await listFiles(gringosFolderId, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+      const files = await listSpreadsheets(gringosFolderId);
       for (const file of files) {
+        if (/consolidated/i.test(file.name)) continue; // skip summary file
         const key = monthKeyFromName(file.name);
         if (!key) continue;
-        const buf = await downloadFile(file.id);
-        const wb = XLSX.read(buf, { type:'array' });
-        const sn = wb.SheetNames.find(s => /sheet1/i.test(s)) || wb.SheetNames[0];
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
-        gringosData[key] = { metrics: parsePnLDetail(rows), fileName: file.name };
+        setLoadingMsg(`Parsing LGC ${file.name}...`);
+        try {
+          const buf = await downloadXlsx(file.id, file.mimeType);
+          const wb = XLSX.read(buf, { type:'array' });
+          // Prefer the 'P&L' sheet, fall back to first sheet
+          const sn = wb.SheetNames.find(s => /^p&l$/i.test(s.trim())) ||
+                     wb.SheetNames.find(s => /p.l/i.test(s)) ||
+                     wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:null });
+          const metrics = parseLGCPnL(rows);
+          if (metrics.revenue || metrics.np != null) {
+            gringosData[key] = { metrics, fileName: file.name };
+          }
+        } catch(e) {
+          console.warn('LGC parse error:', file.name, e.message);
+        }
       }
     }
 
