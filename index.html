@@ -902,44 +902,49 @@ function extractNFCUMetrics(text, debugLabel) {
   if (lastSavM) m.savingsEndBal = parseDollar(lastSavM[4]);
 
   // ── TRANSACTION AMOUNT HELPER ──────────────────────────────────────
-  // pdfjs strips "Deposit - ACH Paid From" prefix. Actual text seen:
-  //   "Gusto Con 265314 01Afd9 03-05 Intl Transaction Fee..."
-  //   "Vacp Treas 310 Xxva Benef 01Afd9 02-25 Transfer From..."
-  //   "Lakeview LN Srv Mtg Pymt Chk 9100001 03-03 Intl Transaction..."
-  // The transaction amount is a separate text item — it appears as a
-  // standalone dollar amount BEFORE the next running balance.
-  // Pattern: keyword ... [amount] [new_balance] [next_date MM-DD]
-  // We scan forward from keyword to the next date (MM-DD), extract all
-  // dollar amounts in that window, and take the FIRST amount > minAmt
-  // (deposits are credits so they appear before next tx date).
-  function txAmtAfter(keyword, minAmt) {
-    const idx = text.indexOf(keyword);
-    if (idx === -1) return null;
-    // Scan up to 300 chars forward, stop before next transaction date
-    const window = text.slice(idx + keyword.length, idx + keyword.length + 300);
-    // Next date pattern like "03-05" signals next transaction
-    const nextDateIdx = window.search(/\b\d{2}-\d{2}\b/);
-    const scan = nextDateIdx > 20 ? window.slice(0, nextDateIdx) : window.slice(0, 150);
-    const nums = [...scan.matchAll(/\b([\d,]+\.\d{2})\b/g)]
-      .map(x => parseDollar(x[1])).filter(v => v >= (minAmt||0));
-    return nums.length ? nums[0] : null;
-  }
+  // pdfjs text stream scatters amounts far from their keywords.
+  // From debug tool: "Vacp Treas 310 Xxva Benef 01Afd9 02-25 Transfer From
+  //   Checking For CODY M HALL Date Transaction De..."
+  // The actual amount (4,428.10) appears as a standalone number well after
+  // the keyword. Strategy: scan a large window (1500 chars), skip small
+  // numbers (fees/balances under minAmt), collect candidates, and use
+  // context to pick the right one.
+  //
+  // Key insight: the deposit amount appears TWICE in the statement —
+  // once as the credit amount and once as part of the running balance line.
+  // They appear consecutively: [deposit_amt] [new_balance].
+  // deposit_amt < new_balance always for a credit.
+  // We find the first consecutive pair where both >= minAmt and take the smaller.
 
-  // Find ALL occurrences of a keyword and sum amounts
   function sumTxAmts(keyword, minAmt) {
     let total = 0, pos = 0;
     while (true) {
       const idx = text.indexOf(keyword, pos);
       if (idx === -1) break;
-      const window = text.slice(idx + keyword.length, idx + keyword.length + 300);
-      const nextDateIdx = window.search(/\b\d{2}-\d{2}\b/);
-      const scan = nextDateIdx > 20 ? window.slice(0, nextDateIdx) : window.slice(0, 150);
-      const nums = [...scan.matchAll(/\b([\d,]+\.\d{2})\b/g)]
-        .map(x => parseDollar(x[1])).filter(v => v >= (minAmt||0));
-      if (nums.length) total += nums[0];
+      // Large window — pdfjs can scatter amounts far from keywords
+      const scan = text.slice(idx, idx + 1500);
+      const allNums = [...scan.matchAll(/\b(\d{1,3}(?:,\d{3})*\.\d{2})\b/g)]
+        .map(x => ({ val: parseDollar(x[1]), pos: x.index }));
+      const large = allNums.filter(n => n.val >= (minAmt||0));
+      if (large.length >= 2) {
+        // First two large numbers: [tx_amount, new_running_balance]
+        total += Math.min(large[0].val, large[1].val);
+      } else if (large.length === 1) {
+        total += large[0].val;
+      }
       pos = idx + 1;
     }
     return total;
+  }
+
+  function txAmtAfter(keyword, minAmt) {
+    const idx = text.indexOf(keyword);
+    if (idx === -1) return null;
+    const scan = text.slice(idx, idx + 1500);
+    const allNums = [...scan.matchAll(/\b(\d{1,3}(?:,\d{3})*\.\d{2})\b/g)]
+      .map(x => parseDollar(x[1])).filter(v => v >= (minAmt||0));
+    if (allNums.length >= 2) return Math.min(allNums[0], allNums[1]);
+    return allNums.length ? allNums[0] : null;
   }
 
   // ── GUSTO PAYROLL ─────────────────────────────────────────────────
