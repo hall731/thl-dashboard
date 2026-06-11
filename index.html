@@ -1050,6 +1050,9 @@ function parseHoldingsSimple(rows) {
     return null;
   }
 
+  // Capture all individual expense line items for split
+  const expLines = {}; // label -> amount
+
   for (const row of rows) {
     const lbl = String(row[0] || '').trim();
     const val = numVal(row[1]);
@@ -1061,10 +1064,12 @@ function parseHoldingsSimple(rows) {
     if (/^total for cost of goods sold/i.test(lbl))     m.cogs = val;
     if (/^total for expenses/i.test(lbl) && !/sub/i.test(lbl)) m.totalExpenses = val;
     if (/^net income$/i.test(lbl))                      m.np = val;
-    if (/^contract labor/i.test(lbl))                   m.consultingFees = val;
-    if (/^cleaning/i.test(lbl))                         m.airbnbCleaning = val;
-    if (/^utilities/i.test(lbl))                        m.utilities = val;
     if (/^advertising/i.test(lbl))                      m.marketing = val;
+
+    // Capture every non-total expense line
+    if (!/^total/i.test(lbl) && !/^(sales|gross profit|net income|income|expenses)$/i.test(lbl)) {
+      expLines[lbl.toLowerCase()] = (expLines[lbl.toLowerCase()]||0) + val;
+    }
   }
 
   if (!m.grossProfit && m.revenue != null && m.cogs != null) m.grossProfit = m.revenue - m.cogs;
@@ -1074,6 +1079,63 @@ function parseHoldingsSimple(rows) {
     m.npPct = (m.np||0) / m.revenue;
   }
   m.overhead = m.totalExpenses;
+
+  // ── CONSULTING vs AIRBNB SPLIT ────────────────────────────────
+  // Airbnb expense categories (property/rental costs)
+  const AIRBNB_KEYS = ['cleaning','utilities','disposal','internet','home depot',
+    'home goods','home improvement','license','hoa','pool','pest','maintenance',
+    'repair','landscap','insurance','mortgage','property'];
+  // Consulting expense categories (business operations)
+  const CONSULT_KEYS = ['travel','flight','hotel','lodging','meals','restaurant',
+    'dining','food','advertising','marketing','contract labor','contractor',
+    'professional','subscription','software','phone','office','supplies',
+    'payroll','salary','wages','gusto','accounting','legal'];
+
+  let airbnbExp = 0, consultingExp = 0, unallocated = 0;
+  const airbnbExpDetail = {}, consultingExpDetail = {};
+
+  for (const [lbl, val] of Object.entries(expLines)) {
+    if (val <= 0) continue;
+    const isAirbnb   = AIRBNB_KEYS.some(k => lbl.includes(k));
+    const isConsult  = CONSULT_KEYS.some(k => lbl.includes(k));
+    if (isAirbnb && !isConsult) {
+      airbnbExp += val;
+      airbnbExpDetail[lbl] = val;
+    } else if (isConsult && !isAirbnb) {
+      consultingExp += val;
+      consultingExpDetail[lbl] = val;
+    } else {
+      unallocated += val; // split 50/50 if ambiguous
+      airbnbExp    += val * 0.5;
+      consultingExp += val * 0.5;
+    }
+  }
+
+  // If we couldn't extract line items, fall back to COGS = Airbnb, Expenses = Consulting
+  if (airbnbExp === 0 && consultingExp === 0 && m.totalExpenses) {
+    airbnbExp    = m.cogs || 0;
+    consultingExp = m.totalExpenses || 0;
+  }
+
+  // Airbnb income: from transaction rows if available (QB detail format)
+  // For simple format, assume Airbnb revenue = COGS-adjacent income (approximation)
+  // If no line-level data, we can't split revenue — mark as N/A
+  const airbnbRev = m.airbnbRevenue || 0; // populated by parseHoldingsPnL if QB detail
+  const consultRev = (m.revenue||0) - airbnbRev;
+
+  m.airbnb = {
+    revenue:  airbnbRev,
+    expenses: Math.round(airbnbExp),
+    np:       airbnbRev - Math.round(airbnbExp),
+    expDetail: airbnbExpDetail,
+  };
+  m.consulting = {
+    revenue:  consultRev || m.revenue, // if no Airbnb rev split, show total
+    expenses: Math.round(consultingExp),
+    np:       (consultRev || m.revenue||0) - Math.round(consultingExp),
+    expDetail: consultingExpDetail,
+  };
+
   return m;
 }
 
@@ -1389,14 +1451,14 @@ function renderTHL() {
 
   // KPIs
   document.getElementById('thl-kpis').innerHTML = [
-    { label:'Revenue',      val:fmt$(m.revenue),       delta:prev?deltaStr(m.revenue,prev.revenue,true):'',       pos:(m.revenue||0)>=(prev?.revenue||0) },
-    { label:'Gross Profit', val:fmt$(m.grossProfit),   delta:prev?deltaStr(m.grossProfit,prev.grossProfit,true):'', pos:(m.grossProfit||0)>=(prev?.grossProfit||0) },
-    { label:'GP %',         val:fmtPct(m.gpPct),       delta:'', pos:true },
-    { label:'COGS',         val:fmt$(m.cogs),          delta:'', pos:false },
-    { label:'Total Expenses',val:fmt$(m.totalExpenses),delta:'', pos:false },
-    { label:'Net Income',   val:fmt$(m.np),            delta:prev?deltaStr(m.np,prev.np,true):'',                 pos:(m.np||0)>=0, color:(m.np||0)>=0?'var(--green)':'var(--red)' },
-    { label:'NP %',         val:fmtPct(m.npPct),       delta:'', pos:(m.npPct||0)>=0 },
-  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:k.val.startsWith('-')?'color:var(--red)':''}">${k.val}</div>${k.delta?`<div class="kpi-delta ${k.pos?'up':'dn'}">${k.delta}</div>`:''}</div>`).join('');
+    { label:'Revenue',       val:fmt$(m.revenue),        color:'var(--text)',  delta:prev?deltaStr(m.revenue,prev.revenue,true):'' },
+    { label:'Gross Profit',  val:fmt$(m.grossProfit),    color:tlColor(m.gpPct, THL_BENCHMARKS.gpPct.green, THL_BENCHMARKS.gpPct.amber), delta:prev?deltaStr(m.grossProfit,prev.grossProfit,true):'' },
+    { label:'GP %',          val:fmtPct(m.gpPct),        color:tlColor(m.gpPct, THL_BENCHMARKS.gpPct.green, THL_BENCHMARKS.gpPct.amber) },
+    { label:'COGS',          val:fmt$(m.cogs),           color:'var(--muted)' },
+    { label:'Total Expenses',val:fmt$(m.totalExpenses),  color:'var(--muted)' },
+    { label:'Net Income',    val:fmt$(m.np),             color:tlColor(m.npPct, THL_BENCHMARKS.npPct.green, THL_BENCHMARKS.npPct.amber), delta:prev?deltaStr(m.np,prev.np,true):'' },
+    { label:'NP %',          val:fmtPct(m.npPct),        color:tlColor(m.npPct, THL_BENCHMARKS.npPct.green, THL_BENCHMARKS.npPct.amber) },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="color:${k.color||'var(--text)'}">${k.val}</div>${k.delta?`<div class="kpi-delta ${(k.delta||'').startsWith('▲')?'up':'dn'}">${k.delta}</div>`:''}</div>`).join('');
 
   renderTHLRatios();
 
@@ -1573,13 +1635,13 @@ function renderHoldings() {
     { label:'Total Bookings', val:(m.bookings||0)+' bookings' },
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('')
   : [
-    { label:'Revenue',      val:fmt$(m.revenue) },
-    { label:'Gross Profit', val:fmt$(m.grossProfit||m.revenue) },
-    { label:'GP %',         val:fmtPct(gpPct) },
-    { label:'Expenses',     val:fmt$(m.totalExpenses||m.expenses) },
-    { label:'Net Income',   val:fmt$(m.np), color:(m.np||0)>=0?'var(--green)':'var(--red)' },
-    { label:'NP %',         val:fmtPct(npPct), color:(npPct||0)>=0?'var(--green)':'var(--red)' },
-  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+    { label:'Revenue',      val:fmt$(m.revenue),              color:'var(--text)' },
+    { label:'Gross Profit', val:fmt$(m.grossProfit||m.revenue),color:tlColor(gpPct, HOL_BENCHMARKS.gpPct.green, HOL_BENCHMARKS.gpPct.amber) },
+    { label:'GP %',         val:fmtPct(gpPct),                color:tlColor(gpPct, HOL_BENCHMARKS.gpPct.green, HOL_BENCHMARKS.gpPct.amber) },
+    { label:'Expenses',     val:fmt$(m.totalExpenses||m.expenses), color:'var(--muted)' },
+    { label:'Net Income',   val:fmt$(m.np),                   color:tlColor(npPct, HOL_BENCHMARKS.npPct.green, HOL_BENCHMARKS.npPct.amber) },
+    { label:'NP %',         val:fmtPct(npPct),                color:tlColor(npPct, HOL_BENCHMARKS.npPct.green, HOL_BENCHMARKS.npPct.amber) },
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="color:${k.color||'var(--text)'}">${k.val}</div></div>`).join('');
 
   // Chart
   const chartLabels = holdingsSubView==='airbnb' ? airbnbLoaded : loaded;
@@ -1596,7 +1658,58 @@ function renderHoldings() {
   });
 
   // Table
-  document.getElementById('holdings-table-title').textContent = holdingsSubView==='airbnb'?'Airbnb Monthly':holdingsSubView==='consulting'?'Consulting P&L':'Holdings P&L';
+  document.getElementById('holdings-table-title').textContent = holdingsSubView==='airbnb'?'Airbnb (QB P&L)':holdingsSubView==='consulting'?'Consulting P&L':'Holdings P&L';
+
+  // For consulting/airbnb sub-views, show expense detail breakdown
+  if (holdingsSubView !== 'airbnb' && loaded.length) {
+    // Collect all expense line items across months for this sub-view
+    const allExpKeys = new Set();
+    loaded.forEach(k => {
+      const detail = holdingsSubView==='consulting'
+        ? holdingsData[k]?.metrics?.consulting?.expDetail
+        : holdingsData[k]?.metrics?.airbnb?.expDetail;
+      if (detail) Object.keys(detail).forEach(e => allExpKeys.add(e));
+    });
+
+    const summaryRows = [
+      { label:'Revenue',      key:'revenue',      bold:true },
+      { label:'Gross profit', key:'grossProfit',  bold:true },
+      { label:'GP %',         key:'gpPct',        pct:true },
+      { label:'Total expenses', key: holdingsSubView==='consulting'?'totalExpenses':'expenses', sub:true },
+    ];
+
+    // Add individual expense lines if we have them
+    const expKeysSorted = [...allExpKeys].sort();
+    const hasExpDetail = expKeysSorted.length > 0;
+    if (hasExpDetail) {
+      expKeysSorted.forEach(ek => {
+        summaryRows.push({ label: '  ' + ek.charAt(0).toUpperCase() + ek.slice(1), expKey: ek, indent: true });
+      });
+    }
+    summaryRows.push({ label:'Net income', key:'np', bold:true });
+    summaryRows.push({ label:'NP %',       key:'npPct', pct:true });
+
+    const th2 = `<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
+    const tb2 = '<tbody>' + summaryRows.map(r => {
+      const cls = r.bold?'row-bold':r.pct?'row-pct':r.indent?'row-pct':'';
+      const cells = loaded.map(k => {
+        const src = holdingsSubView==='consulting'?holdingsData[k]?.metrics?.consulting:holdingsData[k]?.metrics?.airbnb;
+        let v;
+        if (r.expKey) v = src?.expDetail?.[r.expKey] || 0;
+        else v = src?.[r.key];
+        return `<td class="${!r.pct&&v<0?'neg':''}" style="${r.indent?'color:var(--muted);font-size:12px':''}">${r.pct?fmtPct(v):fmt$(v)}</td>`;
+      }).join('');
+      const ytdV = r.pct ? null : loaded.reduce((s,k) => {
+        const src = holdingsSubView==='consulting'?holdingsData[k]?.metrics?.consulting:holdingsData[k]?.metrics?.airbnb;
+        if (r.expKey) return s + (src?.expDetail?.[r.expKey]||0);
+        return s + (src?.[r.key]||0);
+      }, 0);
+      return `<tr class="${cls}"><td style="${r.indent?'padding-left:22px;color:var(--muted);font-size:12px':''}">${r.label.trim()}</td>${cells}<td${ytdV<0?' class="neg"':''}>${ytdV!=null?fmt$(ytdV):'—'}</td></tr>`;
+    }).join('') + '</tbody>';
+    document.getElementById('holdings-table').innerHTML = th2 + tb2;
+    return;
+  }
+
   const tableRows = holdingsSubView==='airbnb' ? [
     { label:'Gross earnings', key:'revenue', bold:true },
     { label:'Payouts',        key:'payouts' },
@@ -1629,7 +1742,40 @@ function renderHoldings() {
   document.getElementById('holdings-table').innerHTML = th2+tb2;
 }
 
-// ── LOS GRINGOS ──────────────────────────────────────────────────
+// ── TRAFFIC LIGHT COLOR HELPERS ──────────────────────────────────
+// Returns CSS color string based on value vs thresholds
+// thresholds: [greenMin, amberMin] — above greenMin=green, above amberMin=amber, else red
+function tlColor(val, greenMin, amberMin) {
+  if (val == null || isNaN(val)) return 'var(--text)';
+  if (val >= greenMin) return 'var(--green)';
+  if (val >= amberMin) return 'var(--amber)';
+  return 'var(--red)';
+}
+// For "lower is better" metrics (expenses, COGS)
+function tlColorInv(val, amberMax, redMax) {
+  if (val == null || isNaN(val)) return 'var(--text)';
+  if (val <= amberMax) return 'var(--green)';
+  if (val <= redMax)   return 'var(--amber)';
+  return 'var(--red)';
+}
+
+// Restaurant benchmarks (as ratio of revenue)
+const LGC_BENCHMARKS = {
+  gpPct:  { green: 0.55, amber: 0.45 },   // GP% ≥55% green, 45-55% amber, <45% red
+  npPct:  { green: 0.10, amber: 0.05 },   // NP% ≥10% green, 5-10% amber, <5% red
+  cogsPct:{ green: 0.35, amber: 0.45 },   // COGS% ≤35% green, ≤45% amber (inv)
+  expPct: { green: 0.50, amber: 0.60 },   // Expenses% ≤50% green (inv)
+};
+// Staffing benchmarks
+const THL_BENCHMARKS = {
+  gpPct: { green: 0.60, amber: 0.40 },
+  npPct: { green: 0.15, amber: 0.05 },
+};
+// Holdings benchmarks
+const HOL_BENCHMARKS = {
+  gpPct: { green: 0.70, amber: 0.50 },
+  npPct: { green: 0.25, amber: 0.10 },
+};
 let gringosChart = null;
 let gringosSelectedMonth = null;
 let lgcCurrency = 'MXN'; // 'MXN' or 'USD'
@@ -1674,14 +1820,15 @@ function renderGringos() {
   });
 
   const m = gringosData[gringosSelectedMonth].metrics;
+  const rev = m.revenue || 1;
   document.getElementById('gringos-kpis').innerHTML=[
-    {label:'Revenue',      val:fmtC(conv(m.revenue))},
-    {label:'Gross Profit', val:fmtC(conv(m.grossProfit)), color:(m.grossProfit||0)>=0?'var(--green)':'var(--red)'},
-    {label:'GP %',         val:fmtPct(m.gpPct)},
-    {label:'Expenses',     val:fmtC(conv(m.totalExpenses))},
-    {label:'Net Income',   val:fmtC(conv(m.np)), color:(m.np||0)>=0?'var(--green)':'var(--red)'},
-    {label:'NP %',         val:fmtPct(m.npPct), color:(m.npPct||0)>=0?'var(--green)':'var(--red)'},
-  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
+    {label:'Revenue',      val:fmtC(conv(m.revenue)),      color:'var(--text)'},
+    {label:'Gross Profit', val:fmtC(conv(m.grossProfit)),  color:tlColor(m.gpPct, LGC_BENCHMARKS.gpPct.green, LGC_BENCHMARKS.gpPct.amber)},
+    {label:'GP %',         val:fmtPct(m.gpPct),            color:tlColor(m.gpPct, LGC_BENCHMARKS.gpPct.green, LGC_BENCHMARKS.gpPct.amber)},
+    {label:'Expenses',     val:fmtC(conv(m.totalExpenses)),color:tlColorInv((m.totalExpenses||0)/rev, LGC_BENCHMARKS.expPct.green, LGC_BENCHMARKS.expPct.amber)},
+    {label:'Net Income',   val:fmtC(conv(m.np)),           color:tlColor(m.npPct, LGC_BENCHMARKS.npPct.green, LGC_BENCHMARKS.npPct.amber)},
+    {label:'NP %',         val:fmtPct(m.npPct),            color:tlColor(m.npPct, LGC_BENCHMARKS.npPct.green, LGC_BENCHMARKS.npPct.amber)},
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="color:${k.color}">${k.val}</div></div>`).join('');
 
   const revs = loaded.map(k=>conv(gringosData[k].metrics.revenue)||0);
   const nps  = loaded.map(k=>conv(gringosData[k].metrics.np)||0);
@@ -1696,23 +1843,27 @@ function renderGringos() {
   });
 
   const pnlRows=[
-    {label:'Revenue',key:'revenue',bold:true},
-    {label:'COGS',key:'cogs'},
-    {label:'Gross profit',key:'grossProfit',bold:true},
-    {label:'GP %',key:'gpPct',pct:true},
-    {label:'Expenses',key:'totalExpenses'},
-    {label:'Net income',key:'np',bold:true},
-    {label:'NP %',key:'npPct',pct:true},
+    {label:'Revenue',     key:'revenue',      bold:true,  colorFn: ()=>'var(--text)'},
+    {label:'COGS',        key:'cogs',         colorFn: (v,m)=>tlColorInv((v||0)/(m.revenue||1), LGC_BENCHMARKS.cogsPct.green, LGC_BENCHMARKS.cogsPct.amber)},
+    {label:'Gross profit',key:'grossProfit',  bold:true,  colorFn: (v,m)=>tlColor((v||0)/(m.revenue||1), LGC_BENCHMARKS.gpPct.green, LGC_BENCHMARKS.gpPct.amber)},
+    {label:'GP %',        key:'gpPct',        pct:true,   colorFn: (v)=>tlColor(v, LGC_BENCHMARKS.gpPct.green, LGC_BENCHMARKS.gpPct.amber)},
+    {label:'Expenses',    key:'totalExpenses',colorFn: (v,m)=>tlColorInv((v||0)/(m.revenue||1), LGC_BENCHMARKS.expPct.green, LGC_BENCHMARKS.expPct.amber)},
+    {label:'Net income',  key:'np',           bold:true,  colorFn: (v,m)=>tlColor((v||0)/(m.revenue||1), LGC_BENCHMARKS.npPct.green, LGC_BENCHMARKS.npPct.amber)},
+    {label:'NP %',        key:'npPct',        pct:true,   colorFn: (v)=>tlColor(v, LGC_BENCHMARKS.npPct.green, LGC_BENCHMARKS.npPct.amber)},
   ];
   const th3=`<thead><tr><th>Metric</th>${loaded.map(k=>`<th>${k}</th>`).join('')}<th>YTD</th></tr></thead>`;
   const tb3='<tbody>'+pnlRows.map(r=>{
     const cls=r.bold?'row-bold':r.pct?'row-pct':'';
     const cells=loaded.map(k=>{
       const v=gringosData[k].metrics[r.key];
-      return `<td class="${!r.pct&&v<0?'neg':''}">${r.pct?fmtPct(v):fmtC(conv(v))}</td>`;
+      const mm=gringosData[k].metrics;
+      const color = r.colorFn ? r.colorFn(v, mm) : 'inherit';
+      return `<td style="color:${color}">${r.pct?fmtPct(v):fmtC(conv(v))}</td>`;
     }).join('');
     const ytdV=r.pct?null:loaded.reduce((s,k)=>s+(gringosData[k].metrics[r.key]||0),0);
-    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td>${r.pct?'—':fmtC(conv(ytdV))}</td></tr>`;
+    const ytdRev=loaded.reduce((s,k)=>s+(gringosData[k].metrics.revenue||0),0);
+    const ytdColor = r.colorFn && ytdV!=null ? r.colorFn(ytdV, {revenue:ytdRev}) : 'inherit';
+    return `<tr class="${cls}"><td>${r.label}</td>${cells}<td style="color:${ytdColor}">${r.pct?'—':fmtC(conv(ytdV))}</td></tr>`;
   }).join('')+'</tbody>';
   document.getElementById('gringos-table').innerHTML=th3+tb3;
 }
