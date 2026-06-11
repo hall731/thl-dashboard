@@ -377,8 +377,8 @@ td.pos{color:var(--green)}td.neg{color:var(--red)}
             <div class="chart-header">
               <div class="card-title" style="margin:0">Income breakdown</div>
               <div class="chart-legend">
-                <span><span class="legend-dot" style="background:#4ade80"></span>Airbnb</span>
-                <span><span class="legend-dot" style="background:#7c6ef7"></span>Consulting</span>
+                <span><span class="legend-dot" style="background:#4ade80"></span>Gusto salary</span>
+                <span><span class="legend-dot" style="background:#7c6ef7"></span>VA benefits</span>
               </div>
             </div>
             <div class="chart-wrap"><canvas id="personal-income-chart"></canvas></div>
@@ -391,7 +391,7 @@ td.pos{color:var(--green)}td.neg{color:var(--red)}
           </div>
         </div>
         <div class="table-card" style="margin-top:1rem">
-          <div class="card-title">Monthly Relay statement summary</div>
+          <div class="card-title">Monthly NFCU Statement Summary</div>
           <table id="personal-table"></table>
         </div>
         <div class="table-card">
@@ -881,76 +881,80 @@ function extractNFCUMetrics(text, debugLabel) {
   }
 
   // ── SUMMARY TABLE ─────────────────────────────────────────────────
-  // Page 1 summary row format (pdfjs joins with spaces):
-  // "7960021207 $3,027.02 $7,913.27 $8,520.98 $2,419.31 $0.68"
-  // Columns: prev_bal | deposits/credits | withdrawals/debits | ending_bal | ytd_div
-  const adcRe = /7960021207\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/;
-  const adcM = text.match(adcRe);
-  if (adcM) {
-    // group 1=prev, 2=deposits, 3=withdrawals, 4=ending
-    m.checkingDeposits    = parseDollar(adcM[2]);
-    m.checkingWithdrawals = parseDollar(adcM[3]);
-    m.checkingEndBal      = parseDollar(adcM[4]);
+  // pdfjs output (all on one line): "7960021207 3022951895 Page 1 of N
+  //   7064529055 $0.00 $X $X $0.00 $0.00 7960021207 $prev $dep $wd $end $ytd
+  //   3022951895 $prev $dep $wd $end $ytd"
+  // The SECOND occurrence of 7960021207 has the amounts.
+  // Strategy: find all occurrences and use the last one that's followed by 4 dollar amounts.
+  const adcRe = /7960021207\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/g;
+  let adcM, lastAdcM;
+  while ((adcM = adcRe.exec(text)) !== null) lastAdcM = adcM;
+  if (lastAdcM) {
+    m.checkingDeposits    = parseDollar(lastAdcM[2]);
+    m.checkingWithdrawals = parseDollar(lastAdcM[3]);
+    m.checkingEndBal      = parseDollar(lastAdcM[4]);
   }
 
-  // Savings: "3022951895 $48,316.91 $9.93 $0.00 $48,326.84 $38.57"
-  // ending balance is column 4
-  const savRe = /3022951895\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/;
-  const savM = text.match(savRe);
-  if (savM) {
-    m.savingsEndBal = parseDollar(savM[4]);
+  // Savings: find last occurrence of 3022951895 followed by 4 amounts
+  const savRe = /3022951895\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/g;
+  let savM2, lastSavM;
+  while ((savM2 = savRe.exec(text)) !== null) lastSavM = savM2;
+  if (lastSavM) m.savingsEndBal = parseDollar(lastSavM[4]);
+
+  // ── TRANSACTION AMOUNT HELPER ──────────────────────────────────────
+  // pdfjs strips "Deposit - ACH Paid From" prefix. Actual text seen:
+  //   "Gusto Con 265314 01Afd9 03-05 Intl Transaction Fee..."
+  //   "Vacp Treas 310 Xxva Benef 01Afd9 02-25 Transfer From..."
+  //   "Lakeview LN Srv Mtg Pymt Chk 9100001 03-03 Intl Transaction..."
+  // The transaction amount is a separate text item — it appears as a
+  // standalone dollar amount BEFORE the next running balance.
+  // Pattern: keyword ... [amount] [new_balance] [next_date MM-DD]
+  // We scan forward from keyword to the next date (MM-DD), extract all
+  // dollar amounts in that window, and take the FIRST amount > minAmt
+  // (deposits are credits so they appear before next tx date).
+  function txAmtAfter(keyword, minAmt) {
+    const idx = text.indexOf(keyword);
+    if (idx === -1) return null;
+    // Scan up to 300 chars forward, stop before next transaction date
+    const window = text.slice(idx + keyword.length, idx + keyword.length + 300);
+    // Next date pattern like "03-05" signals next transaction
+    const nextDateIdx = window.search(/\b\d{2}-\d{2}\b/);
+    const scan = nextDateIdx > 20 ? window.slice(0, nextDateIdx) : window.slice(0, 150);
+    const nums = [...scan.matchAll(/\b([\d,]+\.\d{2})\b/g)]
+      .map(x => parseDollar(x[1])).filter(v => v >= (minAmt||0));
+    return nums.length ? nums[0] : null;
+  }
+
+  // Find ALL occurrences of a keyword and sum amounts
+  function sumTxAmts(keyword, minAmt) {
+    let total = 0, pos = 0;
+    while (true) {
+      const idx = text.indexOf(keyword, pos);
+      if (idx === -1) break;
+      const window = text.slice(idx + keyword.length, idx + keyword.length + 300);
+      const nextDateIdx = window.search(/\b\d{2}-\d{2}\b/);
+      const scan = nextDateIdx > 20 ? window.slice(0, nextDateIdx) : window.slice(0, 150);
+      const nums = [...scan.matchAll(/\b([\d,]+\.\d{2})\b/g)]
+        .map(x => parseDollar(x[1])).filter(v => v >= (minAmt||0));
+      if (nums.length) total += nums[0];
+      pos = idx + 1;
+    }
+    return total;
   }
 
   // ── GUSTO PAYROLL ─────────────────────────────────────────────────
-  // Exact transaction text: "Deposit - ACH Paid From Gusto Pay 798073 01Afd9"
-  // or "Deposit - ACH Paid From Gusto Con 265314 01Afd9"
-  // Amount follows on same line, e.g. "17,493.46"
-  const gustoRe = /Deposit\s*-\s*ACH Paid From Gusto\s+(?:Pay|Con)\s+\S+\s+\S+/gi;
-  let gm;
-  while ((gm = gustoRe.exec(text)) !== null) {
-    const slice = text.slice(gm.index, gm.index + 200);
-    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(x => parseDollar(x[1])).filter(v => v > 500);
-    if (nums.length) m.gustoIncome += nums[0];
-  }
+  // pdfjs text: "Gusto Pay 798073 01Afd9" or "Gusto Con 265314 01Afd9"
+  m.gustoIncome  = sumTxAmts('Gusto Pay', 1000);
+  m.gustoIncome += sumTxAmts('Gusto Con', 1000);
 
   // ── VA BENEFITS ───────────────────────────────────────────────────
-  // Exact text: "Deposit - ACH Paid From Vacp Treas 310 Xxva Benef 01Afd9"
-  // Amount: 4,428.10 on same line
-  const vaRe = /Deposit\s*-\s*ACH Paid From Vacp Treas/gi;
-  let vm;
-  while ((vm = vaRe.exec(text)) !== null) {
-    const slice = text.slice(vm.index, vm.index + 200);
-    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(x => parseDollar(x[1])).filter(v => v > 500);
-    if (nums.length) m.vaIncome += nums[0];
-  }
-
-  // ── HOLDINGS PAYROLL (from Codys Holding — NOT income, skip) ──────
-  // "Deposit - ACH Paid From Codys Holding In Payroll 01Afd9" → 1,742.50
-  // This is a payroll pass-through, not personal income — intentionally excluded
+  // pdfjs text: "Vacp Treas 310 Xxva Benef 01Afd9"
+  m.vaIncome = sumTxAmts('Vacp Treas', 500);
 
   // ── MORTGAGE ──────────────────────────────────────────────────────
-  // Exact text: "Paid To - Lakeview LN Srv Mtg Pymt Chk 9100001"
-  // Amount: 2,350.65
-  const mtgRe = /(?:Paid To|Lakeview)\s*[-–]\s*(?:Lakeview|LN Srv|Mtg Pymt)/gi;
-  let mm2;
-  while ((mm2 = mtgRe.exec(text)) !== null) {
-    const slice = text.slice(mm2.index, mm2.index + 200);
-    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(x => parseDollar(x[1])).filter(v => v > 500);
-    if (nums.length && !m.mortgage) m.mortgage = nums[0];
-  }
-  // Fallback: simpler Lakeview search
-  if (!m.mortgage) {
-    const lv = text.indexOf('Lakeview');
-    if (lv > -1) {
-      const slice = text.slice(lv, lv + 200);
-      const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-        .map(x => parseDollar(x[1])).filter(v => v > 500);
-      if (nums.length) m.mortgage = nums[0];
-    }
-  }
+  // pdfjs text: "Lakeview LN Srv Mtg Pymt Chk 9100001"
+  const mtgAmt = txAmtAfter('Lakeview LN Srv', 500);
+  if (mtgAmt) m.mortgage = mtgAmt;
 
   console.log('NFCU —', debugLabel||'?', {
     deps: m.checkingDeposits, wds: m.checkingWithdrawals,
@@ -1219,9 +1223,9 @@ function getYTDSum(store, key) {
 
 function renderOverview() {
   const entities = [
-    { name:'Tele-Help-Ing', sub:'Staffing', store: thlData, color:'#7c6ef7' },
-    { name:"Cody's Holdings", sub:'Consulting + Airbnb', store: holdingsData, color:'#4ade80' },
-    { name:'Los Gringos Cafe', sub:'Restaurant', store: gringosData, color:'#fbbf24' },
+    { name:'Tele-Help-Ing', sub:'Staffing', store: thlData, color:'#7c6ef7', tab:'thl' },
+    { name:"Cody's Holdings", sub:'Consulting + Airbnb', store: holdingsData, color:'#4ade80', tab:'holdings' },
+    { name:'Los Gringos Cafe', sub:'Restaurant', store: gringosData, color:'#fbbf24', tab:'gringos' },
   ];
 
   // Total YTD across all entities
@@ -1238,13 +1242,12 @@ function renderOverview() {
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-val" style="${k.color?'color:'+k.color:''}">${k.val}</div></div>`).join('');
 
   const rows = entities.map(e => {
-    const m = getLatestMetrics(e.store);
     const ytdRev = getYTDSum(e.store,'revenue');
     const ytdGP  = getYTDSum(e.store,'grossProfit');
     const ytdNP  = getYTDSum(e.store,'np');
     const npPct  = ytdRev ? ytdNP/ytdRev : null;
     const hasData = MONTH_ORDER.some(k => e.store[k]);
-    return `<div class="entity-row" onclick="showEntity('${e.name==='Tele-Help-Ing'?'thl':e.name.includes('Holdings')?'holdings':'gringos'}',null)">
+    return `<div class="entity-row" onclick="showEntity('${e.tab}',null)">
       <div><div class="ent-name" style="color:${e.color}">${e.name}</div><div class="ent-sub">${e.sub}</div></div>
       <div class="ent-val"><div class="ent-label">Revenue YTD</div><div class="ent-num">${hasData?fmt$(ytdRev):'No data'}</div></div>
       <div class="ent-val"><div class="ent-label">Gross Profit</div><div class="ent-num">${hasData?fmt$(ytdGP):'—'}</div></div>
@@ -1252,8 +1255,28 @@ function renderOverview() {
       <div class="ent-val"><div class="ent-label">NP %</div><div class="ent-num">${hasData?fmtPct(npPct):'—'}</div></div>
       <div class="ent-arrow">›</div>
     </div>`;
-  }).join('');
-  document.getElementById('entity-rows').innerHTML = rows;
+  });
+
+  // Personal row — uses Navy Fed data
+  const persLoaded = MONTH_ORDER.filter(k => personalData[k]);
+  const persLatest = persLoaded.length ? personalData[persLoaded[persLoaded.length-1]].metrics : null;
+  const persCheckBal = persLatest?.checkingEndBal || 0;
+  const persSavBal   = persLatest?.savingsEndBal  || 0;
+  const persNetWorth = persCheckBal + persSavBal;
+  const persYTDFlow  = persLoaded.reduce((s,k)=>{
+    const mm = personalData[k].metrics;
+    return s + (mm.checkingDeposits||0) - (mm.checkingWithdrawals||0);
+  }, 0);
+  rows.push(`<div class="entity-row" onclick="showEntity('personal',null)">
+    <div><div class="ent-name" style="color:#60a5fa">Personal</div><div class="ent-sub">Navy Federal</div></div>
+    <div class="ent-val"><div class="ent-label">YTD Cash Flow</div><div class="ent-num" style="color:${persYTDFlow>=0?'var(--green)':'var(--red)'}">${persLoaded.length?fmt$(persYTDFlow):'No data'}</div></div>
+    <div class="ent-val"><div class="ent-label">Checking Bal</div><div class="ent-num">${persLoaded.length?fmt$(persCheckBal):'—'}</div></div>
+    <div class="ent-val"><div class="ent-label">Savings Bal</div><div class="ent-num" style="color:var(--accent)">${persLoaded.length?fmt$(persSavBal):'—'}</div></div>
+    <div class="ent-val"><div class="ent-label">Net Worth</div><div class="ent-num">${persLoaded.length?fmt$(persNetWorth):'—'}</div></div>
+    <div class="ent-arrow">›</div>
+  </div>`);
+
+  document.getElementById('entity-rows').innerHTML = rows.join('');
 }
 
 // ── THL ──────────────────────────────────────────────────────────
