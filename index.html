@@ -863,124 +863,99 @@ function extractNFCUMetrics(text, debugLabel) {
     savingsEndBal: 0, gustoIncome: 0, vaIncome: 0, otherIncome: 0, mortgage: 0
   };
 
-  // ── DEBUG: dump raw text so we can calibrate patterns ────────────
-  // Check console for "NFCU RAW TEXT" to see what the PDF produces.
-  // Set window._nfcuDebug = true in the console to enable full dump.
-  const dbg = window._nfcuDebug || false;
-  if (dbg) {
-    console.group('NFCU RAW TEXT — ' + (debugLabel||''));
-    // Print in 500-char chunks so it's not truncated
-    for (let i = 0; i < text.length; i += 500) console.log(text.slice(i, i+500));
-    console.groupEnd();
-  }
+  // Helper: parse dollar string to float
+  function parseDollar(s) { return parseFloat(String(s).replace(/[$,]/g,'')); }
 
-  // ── HELPER: find dollar amount near a keyword ────────────────────
-  function amtNear(pattern, windowSize, minAmt, all) {
-    const idx = typeof pattern === 'string' ? text.indexOf(pattern) : text.search(pattern);
-    if (idx === -1) return all ? [] : null;
+  // Helper: find first number >= minAmt within windowSize chars after pattern match
+  function amtAfter(pattern, windowSize, minAmt) {
+    const re = typeof pattern === 'string' ? null : pattern;
+    const idx = re ? text.search(re) : text.indexOf(pattern);
+    if (idx === -1) return null;
     const slice = text.slice(idx, idx + windowSize);
-    const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(m => parseFloat(m[1].replace(/,/g,'')))
-      .filter(v => v >= (minAmt||0));
-    return all ? nums : (nums[0] ?? null);
+    const matches = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)];
+    for (const mm of matches) {
+      const v = parseDollar(mm[1]);
+      if (v >= (minAmt||0)) return v;
+    }
+    return null;
   }
 
-  // ── SUMMARY TABLE ────────────────────────────────────────────────
-  // NFCU statements have a summary table near the top. Layout from pdfjs
-  // text extraction is: account name/number row then amounts on same or
-  // next lines. Try several patterns to handle different PDF layouts.
-
-  // Pattern A: hardcoded account numbers (original approach)
-  const adcRe = /796\s*002\s*1207[\s\S]{0,80}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})/;
+  // ── SUMMARY TABLE ─────────────────────────────────────────────────
+  // Page 1 summary row format (pdfjs joins with spaces):
+  // "7960021207 $3,027.02 $7,913.27 $8,520.98 $2,419.31 $0.68"
+  // Columns: prev_bal | deposits/credits | withdrawals/debits | ending_bal | ytd_div
+  const adcRe = /7960021207\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/;
   const adcM = text.match(adcRe);
   if (adcM) {
-    m.checkingDeposits    = parseFloat(adcM[2].replace(/,/g,''));
-    m.checkingWithdrawals = parseFloat(adcM[3].replace(/,/g,''));
-    m.checkingEndBal      = parseFloat(adcM[4].replace(/,/g,''));
-    if (dbg) console.log('NFCU: checking via acct# match', adcM[2], adcM[3], adcM[4]);
+    // group 1=prev, 2=deposits, 3=withdrawals, 4=ending
+    m.checkingDeposits    = parseDollar(adcM[2]);
+    m.checkingWithdrawals = parseDollar(adcM[3]);
+    m.checkingEndBal      = parseDollar(adcM[4]);
   }
 
-  // Pattern B: "Checking" label near Deposits / Withdrawals labels
-  if (!m.checkingDeposits) {
-    const checkIdx = text.search(/checking account|active duty checking/i);
-    if (checkIdx > -1) {
-      const slice = text.slice(checkIdx, checkIdx + 600);
-      const depM  = slice.match(/deposits?\s*\$?([\d,]+\.\d{2})/i);
-      const wdM   = slice.match(/withdrawals?\s*\$?([\d,]+\.\d{2})/i);
-      const balM  = slice.match(/ending balance\s*\$?([\d,]+\.\d{2})/i) ||
-                    slice.match(/closing balance\s*\$?([\d,]+\.\d{2})/i) ||
-                    slice.match(/balance\s+(?:this|at end)\s*\$?([\d,]+\.\d{2})/i);
-      if (depM) m.checkingDeposits    = parseFloat(depM[1].replace(/,/g,''));
-      if (wdM)  m.checkingWithdrawals = parseFloat(wdM[1].replace(/,/g,''));
-      if (balM) m.checkingEndBal      = parseFloat(balM[1].replace(/,/g,''));
-      if (dbg) console.log('NFCU: checking via label match', depM?.[1], wdM?.[1]);
-    }
-  }
-
-  // Savings account
-  const savRe = /302\s*295\s*1895[\s\S]{0,80}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})[\s\S]{0,30}?([\d,]+\.\d{2})/;
+  // Savings: "3022951895 $48,316.91 $9.93 $0.00 $48,326.84 $38.57"
+  // ending balance is column 4
+  const savRe = /3022951895\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/;
   const savM = text.match(savRe);
   if (savM) {
-    m.savingsEndBal = parseFloat(savM[4].replace(/,/g,''));
-    if (dbg) console.log('NFCU: savings via acct#', savM[4]);
-  }
-  if (!m.savingsEndBal) {
-    const savIdx = text.search(/savings account|membership savings/i);
-    if (savIdx > -1) {
-      const slice = text.slice(savIdx, savIdx + 400);
-      const balM = slice.match(/ending balance\s*\$?([\d,]+\.\d{2})/i) ||
-                   slice.match(/closing balance\s*\$?([\d,]+\.\d{2})/i);
-      if (balM) m.savingsEndBal = parseFloat(balM[1].replace(/,/g,''));
-    }
+    m.savingsEndBal = parseDollar(savM[4]);
   }
 
-  // ── GUSTO PAYROLL ────────────────────────────────────────────────
-  // Try multiple spellings: "Gusto Pay", "GUSTO", "Gusto, Inc"
-  const gustoRe = /gusto\s*(?:pay|inc\.?|payroll)?/ig;
+  // ── GUSTO PAYROLL ─────────────────────────────────────────────────
+  // Exact transaction text: "Deposit - ACH Paid From Gusto Pay 798073 01Afd9"
+  // or "Deposit - ACH Paid From Gusto Con 265314 01Afd9"
+  // Amount follows on same line, e.g. "17,493.46"
+  const gustoRe = /Deposit\s*-\s*ACH Paid From Gusto\s+(?:Pay|Con)\s+\S+\s+\S+/gi;
   let gm;
   while ((gm = gustoRe.exec(text)) !== null) {
-    const slice = text.slice(gm.index, gm.index + 300);
+    const slice = text.slice(gm.index, gm.index + 200);
     const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(x => parseFloat(x[1].replace(/,/g,'')))
-      .filter(v => v > 1000);
-    if (nums.length) { m.gustoIncome += nums[0]; if (dbg) console.log('NFCU: gusto hit', nums[0], 'near:', slice.slice(0,60)); }
+      .map(x => parseDollar(x[1])).filter(v => v > 500);
+    if (nums.length) m.gustoIncome += nums[0];
   }
 
-  // ── VA BENEFITS ──────────────────────────────────────────────────
-  // Try: "Vacp Treas", "VACP", "VA Benefits", "Dept Vet"
-  const vaRe = /vacp\s*treas|va\s*benefits?|dept\s*vet|veterans?\s*affairs/ig;
+  // ── VA BENEFITS ───────────────────────────────────────────────────
+  // Exact text: "Deposit - ACH Paid From Vacp Treas 310 Xxva Benef 01Afd9"
+  // Amount: 4,428.10 on same line
+  const vaRe = /Deposit\s*-\s*ACH Paid From Vacp Treas/gi;
   let vm;
   while ((vm = vaRe.exec(text)) !== null) {
     const slice = text.slice(vm.index, vm.index + 200);
     const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(x => parseFloat(x[1].replace(/,/g,'')))
-      .filter(v => v > 500);
-    if (nums.length) { m.vaIncome += nums[0]; if (dbg) console.log('NFCU: VA hit', nums[0], 'near:', slice.slice(0,60)); }
+      .map(x => parseDollar(x[1])).filter(v => v > 500);
+    if (nums.length) m.vaIncome += nums[0];
   }
 
-  // ── MORTGAGE ────────────────────────────────────────────────────
-  const mtgRe = /lakeview|mtg\s*pymt|mortgage\s*payment|freedom\s*mortg/ig;
-  let mm;
-  while ((mm = mtgRe.exec(text)) !== null) {
-    const slice = text.slice(mm.index, mm.index + 200);
+  // ── HOLDINGS PAYROLL (from Codys Holding — NOT income, skip) ──────
+  // "Deposit - ACH Paid From Codys Holding In Payroll 01Afd9" → 1,742.50
+  // This is a payroll pass-through, not personal income — intentionally excluded
+
+  // ── MORTGAGE ──────────────────────────────────────────────────────
+  // Exact text: "Paid To - Lakeview LN Srv Mtg Pymt Chk 9100001"
+  // Amount: 2,350.65
+  const mtgRe = /(?:Paid To|Lakeview)\s*[-–]\s*(?:Lakeview|LN Srv|Mtg Pymt)/gi;
+  let mm2;
+  while ((mm2 = mtgRe.exec(text)) !== null) {
+    const slice = text.slice(mm2.index, mm2.index + 200);
     const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
-      .map(x => parseFloat(x[1].replace(/,/g,'')))
-      .filter(v => v > 500);
-    if (nums.length && !m.mortgage) { m.mortgage = nums[0]; if (dbg) console.log('NFCU: mortgage hit', nums[0]); }
+      .map(x => parseDollar(x[1])).filter(v => v > 500);
+    if (nums.length && !m.mortgage) m.mortgage = nums[0];
+  }
+  // Fallback: simpler Lakeview search
+  if (!m.mortgage) {
+    const lv = text.indexOf('Lakeview');
+    if (lv > -1) {
+      const slice = text.slice(lv, lv + 200);
+      const nums = [...slice.matchAll(/\$?([\d,]+\.\d{2})/g)]
+        .map(x => parseDollar(x[1])).filter(v => v > 500);
+      if (nums.length) m.mortgage = nums[0];
+    }
   }
 
-  // ── ALWAYS LOG SUMMARY to console for verification ───────────────
-  console.log('NFCU parse result —', debugLabel||'', {
-    checkingDeposits: m.checkingDeposits,
-    checkingWithdrawals: m.checkingWithdrawals,
-    checkingEndBal: m.checkingEndBal,
-    savingsEndBal: m.savingsEndBal,
-    gustoIncome: m.gustoIncome,
-    vaIncome: m.vaIncome,
-    mortgage: m.mortgage,
-    gusto_found: text.search(/gusto/i) !== -1,
-    va_found: text.search(/vacp|va benefits/i) !== -1,
-    lakeview_found: text.search(/lakeview|mtg pymt/i) !== -1,
+  console.log('NFCU —', debugLabel||'?', {
+    deps: m.checkingDeposits, wds: m.checkingWithdrawals,
+    endBal: m.checkingEndBal, sav: m.savingsEndBal,
+    gusto: m.gustoIncome, va: m.vaIncome, mtg: m.mortgage
   });
 
   m.otherIncome = Math.max(0, m.checkingDeposits - m.gustoIncome - m.vaIncome);
@@ -993,7 +968,8 @@ async function parseNFCUPDF(arrayBuffer, fileName) {
   try {
     const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let allText = '';
-    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 4); pageNum++) {
+    // Read ALL pages — transactions span pages 2-6+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const content = await page.getTextContent();
       allText += ' ' + content.items.map(i => i.str).join(' ');
