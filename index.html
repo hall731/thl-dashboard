@@ -1050,13 +1050,13 @@ function parseHoldingsSimple(rows) {
     return null;
   }
 
-  // Capture all individual expense line items for split
+  // Individual expense line items for split
   const expLines = {}; // label -> amount
 
   for (const row of rows) {
     const lbl = String(row[0] || '').trim();
     const val = numVal(row[1]);
-    if (!lbl || val === null) continue;
+    if (!lbl || val === null || val <= 0) continue;
 
     if (/^sales$/i.test(lbl) && !m.revenue)            m.revenue = val;
     if (/^total for income/i.test(lbl))                 m.revenue = val;
@@ -1066,8 +1066,13 @@ function parseHoldingsSimple(rows) {
     if (/^net income$/i.test(lbl))                      m.np = val;
     if (/^advertising/i.test(lbl))                      m.marketing = val;
 
-    // Capture every non-total expense line
-    if (!/^total/i.test(lbl) && !/^(sales|gross profit|net income|income|expenses)$/i.test(lbl)) {
+    // Only capture named expense lines (not totals, not income, not balance sheet items)
+    // Must be a leaf line item — no "total", no "for", reasonable amount
+    const isLeafExpense = !/^total/i.test(lbl)
+      && !/^(sales|gross profit|net income|income|ordinary|expenses|cost of goods)$/i.test(lbl)
+      && !/^for /i.test(lbl)
+      && val < 50000; // sanity cap — leaf items shouldn't be huge totals
+    if (isLeafExpense) {
       expLines[lbl.toLowerCase()] = (expLines[lbl.toLowerCase()]||0) + val;
     }
   }
@@ -1106,8 +1111,19 @@ function parseHoldingsSimple(rows) {
     }
   }
 
-  if (airbnbExp === 0 && consultingExp === 0 && m.totalExpenses) {
+  if (airbnbExp === 0 && consultingExp === 0) {
     airbnbExp     = m.cogs || 0;
+    consultingExp = m.totalExpenses || 0;
+  }
+
+  // Use totalExpenses as ground truth — expLines may not capture everything
+  // Scale: if expLines total < totalExpenses, scale up proportionally
+  const expLinesTotal = airbnbExp + consultingExp;
+  if (expLinesTotal > 0 && m.totalExpenses && expLinesTotal < m.totalExpenses * 0.9) {
+    const scale = m.totalExpenses / expLinesTotal;
+    airbnbExp    = Math.round(airbnbExp * scale);
+    consultingExp = Math.round(consultingExp * scale);
+  } else if (expLinesTotal === 0) {
     consultingExp = m.totalExpenses || 0;
   }
 
